@@ -8,3 +8,7 @@
 .freshness-missing{background:#f1f3f7;color:#56657b}
 .readings-note{font-size:12px;color:#805516}
 .room-readings .metrics strong{overflow-wrap:anywhere}
+
+.refresh-controls{display:grid;justify-items:end;gap:8px;text-align:right}
+.refresh-controls p{font-size:10px;color:#60718d;max-width:210px}
+@media(max-width:650px){.refresh-controls p{max-width:130px}.readings-summary{align-items:flex-start}}
