@@ -1,0 +1,15 @@
+services:
+  simulator:
+    build: .
+    ports:
+      - "127.0.0.1:4310:4310"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4310
+      OUTBOUND_TOKEN: ${OUTBOUND_TOKEN:-}
+      COMMAND_TOKEN: ${COMMAND_TOKEN:-}
+    volumes:
+      - simulator_data:/app/data
+    restart: unless-stopped
+volumes:
+  simulator_data:

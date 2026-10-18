@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.local
+**/.env
+**/.env.local
+.next/
+dist/
+data/
+*.tsbuildinfo
+*.log
+*.dump

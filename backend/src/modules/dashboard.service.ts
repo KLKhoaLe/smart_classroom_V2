@@ -1,0 +1,14 @@
+import { Injectable } from '@nestjs/common';
+import { DataSource } from 'typeorm';
+@Injectable()
+export class DashboardService {
+ constructor(private readonly db:DataSource){}
+ async get(){const devices=await this.db.query(`SELECT d.id,d.code,d.name,r.code AS room_code,d.last_seen,(d.last_seen>now()-interval '90 seconds') IS TRUE AS online,t.id AS telemetry_id,t.temperature,t.humidity,t.co2_ppm,t.light_percent,t.occupancy_count,t.power_w,t.observed_at FROM devices d JOIN rooms r ON r.id=d.room_id LEFT JOIN LATERAL (SELECT * FROM telemetry WHERE device_id=d.id ORDER BY observed_at DESC,sequence DESC LIMIT 1) t ON true ORDER BY d.code`);
+  const states=await this.db.query(`SELECT * FROM device_states ORDER BY command_type`);
+  const [stats]=await this.db.query(`SELECT (SELECT count(*)::int FROM telemetry) AS telemetry_count,(SELECT count(*)::int FROM device_commands WHERE status IN ('PENDING','QUEUED','SENT')) AS pending_commands,(SELECT count(*)::int FROM incidents WHERE status<>'RESOLVED') AS open_incidents`);
+  const decisions=await this.db.query(`SELECT * FROM automation_decisions ORDER BY created_at DESC LIMIT 5`);
+  return {devices:devices.map((d:any)=>({...d,states:states.filter((s:any)=>s.device_id===d.id)})),stats,decisions,server_time:new Date().toISOString(),manual_enabled:!!process.env.N8N_AUTOMATION_WEBHOOK_URL};
+ }
+ incidents(){return this.db.query(`SELECT * FROM incidents ORDER BY last_seen DESC LIMIT 100`);}
+ reports(){return this.db.query(`SELECT r.*,rooms.code AS room_code FROM reports r JOIN rooms ON rooms.id=r.room_id ORDER BY r.created_at DESC LIMIT 100`);}
+}

@@ -1,0 +1,6 @@
+'use client';
+import {useEffect,useState} from 'react';
+export default function Records({kind}:{kind:'incidents'|'reports'}){const [rows,setRows]=useState<Record<string,unknown>[]>([]),[error,setError]=useState(''),[loading,setLoading]=useState(true);
+ useEffect(()=>{fetch('/api/backend/'+kind).then(async r=>{if(!r.ok)throw new Error('Không tải được dữ liệu từ backend.');setRows(await r.json());}).catch(e=>setError(e.message)).finally(()=>setLoading(false));},[kind]);
+ return <><div className="heading"><div><div className="eyebrow">{kind==='incidents'?'INCIDENT CENTER':'REPORT CENTER'}</div><h1>{kind==='incidents'?'Quản lý sự cố':'Báo cáo hệ thống'}</h1><p>Khung giao diện và API đọc đã sẵn sàng cho Hiệp tiếp tục phát triển.</p></div></div><section className="panel">{error?<div className="alert">{error}</div>:loading?<div className="empty">Đang tải…</div>:rows.length?rows.map(row=><article key={String(row.id)}><h2>{String(row.title||row.type)}</h2><span className="pill">{String(row.status)}</span><p>{String(row.summary||'')}</p></article>):<div className="empty">Chưa có {kind==='incidents'?'sự cố':'báo cáo'}.<br/>Flow 10–12 và API ghi sẽ được bổ sung theo phân công.</div>}</section></>;
+}
