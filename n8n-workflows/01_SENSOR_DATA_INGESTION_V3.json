@@ -1,0 +1,508 @@
+{
+  "name": "01_SENSOR_DATA_INGESTION_V3",
+  "nodes": [
+    {
+      "id": "209032a7-b1a8-4097-994d-b02510f6cec8",
+      "name": "Receive Telemetry",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "simulator-telemetry",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "cd95c2e4-60d9-458a-a985-c3d035ecee3c"
+    },
+    {
+      "id": "b763e7bd-9a9c-4d8b-b0d4-d46e919e1505",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// n8n Docker Desktop -> NestJS tren Windows.\n// Neu n8n chay truc tiep tren Windows, doi base_url thanh http://127.0.0.1:3001\nreturn {json:{input:$json.body,config:{base_url:'http://host.docker.internal:3001',max_age_seconds:120}}};"
+      }
+    },
+    {
+      "id": "cca79fb0-6e08-4705-a443-801ec00d4df9",
+      "name": "Validate Telemetry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const input = $json.input;\nconst config = $json.config;\nconst errors = [];\nlet data = input;\nif (typeof data === 'string') {\n  try { data = JSON.parse(data); } catch { errors.push('Body không phải JSON hợp lệ.'); }\n}\nif (!data || typeof data !== 'object' || Array.isArray(data)) {\n  errors.push('Body phải là một JSON object.'); data = {};\n}\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nfor (const key of ['event_id','run_id']) if(typeof data[key] !== 'string' || !uuid.test(data[key])) errors.push(`${key} phải là UUID hợp lệ.`);\nif(typeof data.device_id !== 'string' || !data.device_id.trim() || data.device_id.length > 100) errors.push('device_id phải là mã thiết bị hoặc UUID.');\nif(!Number.isSafeInteger(data.sequence) || data.sequence < 0) errors.push('sequence phải là số nguyên không âm.');\nconst ranges = {temperature:[-10,60],humidity:[0,100],light_percent:[0,100],occupancy_count:[0,100],co2_ppm:[300,5000],power_w:[0,20000]};\nfor(const [key,[min,max]] of Object.entries(ranges)) {\n  const v=data[key];\n  if(typeof v!=='number'||!Number.isFinite(v)||v<min||v>max) errors.push(`${key} phải là số từ ${min} đến ${max}.`);\n}\nif(!Number.isInteger(data.occupancy_count)) errors.push('occupancy_count phải là số nguyên.');\nif(typeof data.door_open!=='boolean') errors.push('door_open phải là boolean.');\nconst time = typeof data.observed_at==='string' && /^\\d{4}-\\d\\d-\\d\\dT.*(?:Z|[+-]\\d\\d:\\d\\d)$/.test(data.observed_at) ? Date.parse(data.observed_at) : NaN;\nif(!Number.isFinite(time)) errors.push('observed_at phải là ISO timestamp có múi giờ.');\nelse if(time > Date.now()+60000) errors.push('observed_at vượt quá 60 giây trong tương lai.');\nfor(const key of ['simulated','occupancy']) if(data[key]!==undefined && typeof data[key]!=='boolean') errors.push(`${key} phải là boolean.`);\nif(typeof data.occupancy==='boolean' && data.occupancy!==(data.occupancy_count>0)) errors.push('occupancy không khớp occupancy_count.');\nfor(const key of ['device_code','room','room_code']) if(data[key]!==undefined&&(typeof data[key]!=='string'||!data[key].trim()||data[key].length>100)) errors.push(`${key} không hợp lệ.`);\nif(data.schema_version!==undefined && data.schema_version!==2)errors.push('Chỉ hỗ trợ telemetry schema_version 2 (khác với tên workflow V3).');\nif(data.light_raw!==undefined && (!Number.isInteger(data.light_raw)||data.light_raw<0||data.light_raw>4095))errors.push('light_raw phải là số nguyên từ 0 đến 4095.');\nfor(const [key,max] of [['pm25_ug_m3',500],['water_l_min',100]]) if(data[key]!==undefined&&(typeof data[key]!=='number'||!Number.isFinite(data[key])||data[key]<0||data[key]>max)) errors.push(`${key} không hợp lệ.`);\nif(data.actual_state!==undefined && (!data.actual_state || typeof data.actual_state!=='object'||Array.isArray(data.actual_state))) errors.push('actual_state phải là object.');\nconst fields=['device_id','device_code','event_id','run_id','sequence','observed_at','temperature','humidity','light_percent','occupancy_count','co2_ppm','power_w','door_open','simulated','occupancy','room','room_code','light_raw','schema_version','actual_state','pm25_ug_m3','water_l_min'];\nconst payload=Object.fromEntries(fields.filter(k=>data[k]!==undefined).map(k=>[k,data[k]]));\nconst raw = input && typeof input==='object'&&!Array.isArray(input) ? input : {received_body:input??null};\nreturn {json:{valid:errors.length===0,errors,telemetry_payload:payload,\n error_record:{device_code:typeof data.device_code==='string'?data.device_code.slice(0,80):typeof data.device_id==='string'?data.device_id.slice(0,80):undefined,reason:errors.join(' | ')||'UNKNOWN_VALIDATION_ERROR',raw_payload:raw},\n max_age_seconds:config.max_age_seconds}};\n"
+      }
+    },
+    {
+      "id": "a54e593a-558c-420e-a046-a72246ffbd6d",
+      "name": "Valid Payload?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "be7aa372-734c-46d5-87a1-1b6942708e66",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8c6b2eb4-3fdd-4814-94de-25b7fe654867",
+      "name": "Save Telemetry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        -140
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuration').first().json.config.base_url + '/api/telemetry' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.telemetry_payload) }}",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "6d888ffc-642b-42c2-a7af-6d5a4c25c83f",
+      "name": "Check Backend Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        -140
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const response=$json;\nconst source=$('Validate Telemetry').first().json;\nconst status=response.statusCode;\nconst body=response.body;\nif(!Number.isInteger(status)) throw new Error('Không nhận được statusCode. Kiểm tra Full Response của Save Telemetry.');\nif(status>=200&&status<300){\n if(typeof body?.created!=='boolean'||!body?.telemetry?.id||!body?.telemetry?.raw_payload)throw new Error('Backend response sai contract v2.');\n return {json:{saved:true,created:body.created,telemetry:body.telemetry,max_age_seconds:source.max_age_seconds}};\n}\nif([400,404,409,422].includes(status)) return {json:{saved:false,error_record:{device_code:source.error_record.device_code,reason:'BACKEND_REJECTED_HTTP_'+status+' | '+JSON.stringify(body),raw_payload:source.telemetry_payload}}};\nthrow new Error('Backend HTTP '+status+': '+JSON.stringify(body));\n"
+      }
+    },
+    {
+      "id": "6d45d20e-5239-42ce-aced-e7a1c0ec318c",
+      "name": "Saved Successfully?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1440,
+        -140
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fa961835-ea74-468e-b8b3-b7d2a8d0eccc",
+              "leftValue": "={{ $json.saved }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "3dc51132-1f83-44ad-93bc-8527839390dd",
+      "name": "New Event?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        -260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dedbe87f-3805-4e7f-a222-bbd00238f704",
+              "leftValue": "={{ $json.created }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "949d1f08-2763-4a99-83ca-0a579bcd102d",
+      "name": "Check Freshness",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        -360
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const age_seconds=(Date.now()-Date.parse($json.telemetry.observed_at))/1000;\nreturn {json:{...$json,age_seconds,fresh:Number.isFinite(age_seconds)&&age_seconds<=$json.max_age_seconds&&age_seconds>=-60}};"
+      }
+    },
+    {
+      "id": "ece9d2de-819c-411e-8ef1-c16cc857b96a",
+      "name": "Fresh Enough?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2160,
+        -360
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9d5819e6-23ae-4234-b14a-f905f20e1ff6",
+              "leftValue": "={{ $json.fresh }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "873be51f-4c97-4d53-b0ed-f97b27944b68",
+      "name": "Ready for Flow 02",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        -460
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const t=$json.telemetry;\nconst payload=t.raw_payload;\nreturn {json:{...payload,device_id:t.device_id,telemetry_id:t.id,correlation_id:t.event_id,event_id:t.event_id,workflow_version:'V3',ingestion_status:'ACCEPTED_NEW',ready_for_decision:true,occupancy:t.occupancy_count>0,age_seconds:$json.age_seconds,next_step:'Connect flow 02 here when available'}};\n"
+      }
+    },
+    {
+      "id": "05009ebf-709b-484d-98b7-47c83f4058c4",
+      "name": "Skip Stale Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        -260
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return {json:{ingestion_status:'STORED_STALE',telemetry_id:$json.telemetry.id,event_id:$json.telemetry.event_id,age_seconds:$json.age_seconds,ready_for_decision:false,reason:'Đã lưu lịch sử nhưng quá tuổi dữ liệu cho quyết định mới.'}};"
+      }
+    },
+    {
+      "id": "6ad44964-d8a1-4898-8426-132ee16d855e",
+      "name": "Skip Duplicate Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        -40
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return {json:{ingestion_status:'DUPLICATE',telemetry_id:$json.telemetry.id,event_id:$json.telemetry.event_id,ready_for_decision:false,reason:'Backend đã có event_id này; không gọi lại flow 02.'}};"
+      }
+    },
+    {
+      "id": "3ccb942f-7274-4556-87c9-a9fce63ed1db",
+      "name": "Save Ingestion Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuration').first().json.config.base_url + '/api/ingestion-errors' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.error_record) }}",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "183f59f2-1f5a-4bca-aef8-6abeaa2c9bf4",
+      "name": "Rejected and Logged",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        260
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return {json:{ingestion_status:'REJECTED',error_id:$json.id,reason:$json.reason,ready_for_decision:false}};"
+      }
+    },
+    {
+      "id": "a0d12450-2717-4fe2-aaee-e626b885f4b1",
+      "name": "Setup and boundaries",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -650
+      ],
+      "parameters": {
+        "content": "## FLOW 01 — V3 | Chạy độc lập\n1. Configuration: base_url mặc định host.docker.internal:3001 cho n8n Docker Desktop.\n2. backend/.env: HOST=0.0.0.0 nếu n8n trong Docker gọi backend trên Windows; restart backend. Chỉ thử trên mạng local tin cậy.\n3. Nếu API_TOKEN có giá trị: chọn Header Auth cho cả hai HTTP Request node (Authorization: Bearer ...). Không hardcode token vào JSON.\n4. Publish flow rồi đổi CHỈ Telemetry URL của simulator sang Production URL /webhook/simulator-telemetry. Heartbeat/ACK/Claim giữ như cũ.\n5. Không publish hai webhook có cùng path. Flow02 chưa cần có, không có node gọi workflow chưa cấu hình.\n\nWebhook trả lời ngay: HTTP200 chỉ xác nhận n8n nhận request, xem Executions/DB để biết kết quả xử lý. JSON hỏng ở tầng HTTP có thể bị n8n từ chối trước Code node.\nV3 là tên workflow; telemetry schema vẫn là version 2.\n",
+        "height": 510,
+        "width": 800
+      }
+    },
+    {
+      "id": "60f58bf1-e2b5-4f8b-b466-5dd88094b329",
+      "name": "Outcome notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1620,
+        -910
+      ],
+      "parameters": {
+        "content": "## Kết quả và điểm nối sau này\n• Mới + đủ mới → Ready for Flow 02 (nối Execute Sub-workflow sau khi có flow02).\n• Trùng → dừng; dựa unique event_id trong DB, không dùng bộ nhớ n8n.\n• Cũ >120s → vẫn lưu lịch sử, không chuyển quyết định.\n• Sai dữ liệu / backend 400,404,409,422 → lưu ingestion_errors.\n• Lỗi mạng/401/403/429/5xx → execution lỗi; không giả thành công.\n\nKhông tự retry HTTP trong flow này. Nếu DB đã lưu nhưng execution dừng trước flow02, gửi lại cùng ID sẽ đi nhánh trùng; xử lý phục hồi/downstream outbox là phần tích hợp sau.\n",
+        "height": 400,
+        "width": 700
+      }
+    }
+  ],
+  "connections": {
+    "Receive Telemetry": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [
+          {
+            "node": "Validate Telemetry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Telemetry": {
+      "main": [
+        [
+          {
+            "node": "Valid Payload?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Payload?": {
+      "main": [
+        [
+          {
+            "node": "Save Telemetry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Ingestion Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Telemetry": {
+      "main": [
+        [
+          {
+            "node": "Check Backend Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Backend Result": {
+      "main": [
+        [
+          {
+            "node": "Saved Successfully?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Saved Successfully?": {
+      "main": [
+        [
+          {
+            "node": "New Event?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Ingestion Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New Event?": {
+      "main": [
+        [
+          {
+            "node": "Check Freshness",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Duplicate Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Freshness": {
+      "main": [
+        [
+          {
+            "node": "Fresh Enough?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fresh Enough?": {
+      "main": [
+        [
+          {
+            "node": "Ready for Flow 02",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Stale Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Ingestion Error": {
+      "main": [
+        [
+          {
+            "node": "Rejected and Logged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
