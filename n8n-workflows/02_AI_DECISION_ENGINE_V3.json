@@ -516,6 +516,37 @@
         1232,
         1984
       ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "RN7aCOto64lLYegG",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/RN7aCOto64lLYegG",
+          "cachedResultName": "03_MASTER_AUTOMATION_V3"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2976,
+        2576
+      ],
+      "id": "19a02414-37b4-497a-bcbd-900e2520e9de",
+      "name": "Call '03_MASTER_AUTOMATION_V3'"
     }
   ],
   "pinData": {},
@@ -774,6 +805,17 @@
           }
         ]
       ]
+    },
+    "Ready for Flow 03": {
+      "main": [
+        [
+          {
+            "node": "Call '03_MASTER_AUTOMATION_V3'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -781,7 +823,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "b112b8cc-935a-47ee-88e8-2650b0a79759",
+  "versionId": "a46576c9-35ce-4b06-8f0e-5d32631336b8",
   "meta": {
     "instanceId": "74397114e206792390d2318630c9cb2cd8c3ad6e9328254d2194767fe90a0e8d"
   },
