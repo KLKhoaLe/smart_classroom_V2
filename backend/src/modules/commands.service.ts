@@ -21,6 +21,8 @@ export class CommandsService {
  async dispatch(id:string){await this.expire();await this.db.query(`UPDATE device_commands SET status='QUEUED' WHERE id=$1 AND status='PENDING' AND expires_at>now()`,[id]);return this.get(id);}
  async claim(ref:string){const d=await this.devices.resolve(ref);await this.expire();
   return this.db.transaction(async q=>{
+   // FLOW03_V3_DEVICE_LOCK
+   await q.query('SELECT id FROM devices WHERE id=$1 FOR UPDATE',[d.id]);
    // PostgreSQL SKIP LOCKED prevents two workers from claiming the same rows.
    const rows=await q.query(`WITH picked AS (SELECT id FROM device_commands WHERE device_id=$1 AND status='QUEUED' AND expires_at>now() ORDER BY sequence LIMIT 20 FOR UPDATE SKIP LOCKED), claimed AS (UPDATE device_commands c SET status='SENT',sent_at=now() FROM picked WHERE c.id=picked.id RETURNING c.*,c.id AS command_id) SELECT * FROM claimed ORDER BY sequence`,[d.id]);
    rows.sort((a:any,b:any)=>Number(a.sequence)-Number(b.sequence));
@@ -29,6 +31,7 @@ export class CommandsService {
  }
  async ack(b:AckDto){const d=await this.devices.resolve(b.device_id);if(b.device_code&&b.device_code!==d.code)throw new BadRequestException('device_code không khớp.');
   return this.db.transaction(async q=>{
+   await q.query('SELECT id FROM devices WHERE id=$1 FOR UPDATE',[d.id]);
    const [c]=await q.query(`SELECT * FROM device_commands WHERE id=$1 FOR UPDATE`,[b.command_id]);
    if(!c)throw new NotFoundException('Không có command.');if(c.device_id!==d.id)throw new BadRequestException('ACK sai thiết bị.');
    if(b.sequence!==undefined&&b.sequence!==Number(c.sequence))throw new BadRequestException('ACK sai sequence.');
