@@ -12,3 +12,21 @@
 .refresh-controls{display:grid;justify-items:end;gap:8px;text-align:right}
 .refresh-controls p{font-size:10px;color:#60718d;max-width:210px}
 @media(max-width:650px){.refresh-controls p{max-width:130px}.readings-summary{align-items:flex-start}}
+
+/* Manual override UI: keep desired, actual and mode distinct. */
+.manual-controls{margin-top:26px;border-top:1px solid #edf1f7;padding-top:24px}
+.manual-toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.manual-toolbar h3{font-size:15px;margin:0 0 5px}
+.manual-toolbar label{display:grid;gap:6px;font-size:12px;color:#50627c}
+.manual-toolbar select{font:inherit;color:#263853;background:white;border:1px solid #ccd6e5;border-radius:8px;padding:9px 12px;min-width:130px}
+.manual-hint{color:#60718d;font-size:12px;margin-top:12px}
+.override-status{padding:12px 0;min-height:57px;display:grid;gap:6px;font-size:11px}
+.override-manual{color:#805516}.override-auto{color:#21654f}.override-unknown{color:#60718d}
+.override-countdown{font-size:17px;font-variant-numeric:tabular-nums}
+.override-status small{font-size:10px}
+.manual-actions{display:flex;gap:6px;flex-wrap:wrap}
+.manual-actions .button{flex:1;min-width:75px;margin-top:0;padding:10px 6px}
+.manual-message{padding:14px 16px;background:#eef3ff;border-radius:9px;color:#385a99;line-height:1.8;margin-top:16px;font-size:12px}
+.manual-controls .alert{margin-top:14px;margin-bottom:0}
+.manual-controls button:focus-visible,.manual-toolbar select:focus-visible{outline:2px solid #3e62e7;outline-offset:3px}
+@media(max-width:650px){.manual-controls .device-grid{grid-template-columns:1fr}.manual-toolbar{align-items:flex-start}}

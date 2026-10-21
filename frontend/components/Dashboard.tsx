@@ -1,47 +1,14 @@
 'use client';
 
-import { useState } from 'react';
 import { useDashboard } from './useDashboard';
 import RoomReadings from './RoomReadings';
 import { formatTime } from '../lib/dashboard';
-import type { DeviceState, Device } from '../lib/dashboard';
-
-const labels: Record<string, string> = {
-  FAN: 'Quạt', LIGHT: 'Đèn chiếu sáng', VENTILATION: 'Thông gió', DEHUMIDIFIER: 'Máy hút ẩm',
-};
+import ManualControls from './ManualControls';
 
 export default function Dashboard() {
   const { dashboard, commands: commandResource, loading, refresh } = useDashboard();
   const data = dashboard.value;
   const commands = commandResource.value ?? [];
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
-
-  async function manual(device: Device, state: DeviceState) {
-    setBusy(true);
-    setMessage('');
-    try {
-      const response = await fetch('/api/backend/commands/manual', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          device_id: device.id,
-          command_type: state.command_type,
-          action: state.desired_state === 'ON' ? 'OFF' : 'ON',
-          override_minutes: 10,
-        }),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(Array.isArray(body.message) ? body.message.join(', ') : body.message || body.error || 'Yêu cầu thất bại');
-      setMessage('Đã gửi yêu cầu tới flow 03. Chờ command và ACK; chưa xác nhận thiết bị đổi trạng thái.');
-      await refresh();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Yêu cầu thất bại');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return <>
     <div className="heading">
       <div>
@@ -71,20 +38,8 @@ export default function Dashboard() {
         <span className={'pill ' + (device.online ? 'green' : 'muted')}>{device.online ? 'Online ở lần đọc gần nhất' : 'Chưa online / Offline'}</span>
       </div>
       <RoomReadings device={device} />
-      <div className="device-grid">
-        {device.states.map(state => <div className="device" key={state.command_type}>
-          <div className="device-title">
-            <b>{labels[state.command_type] || state.command_type}</b>
-            <span className={'state ' + (state.actual_state === 'ON' ? 'on' : '')}>{state.actual_state ?? 'CHƯA XÁC NHẬN'}</span>
-          </div>
-          <p>Mong muốn: <strong>{state.desired_state}</strong></p>
-          <p>Xác nhận: {state.confirmed_at ? formatTime(state.confirmed_at) : 'Chưa có ACK'}</p>
-          <button disabled={busy || !data.manual_enabled} onClick={() => void manual(device, state)} className="button">Yêu cầu {state.desired_state === 'ON' ? 'tắt' : 'bật'}</button>
-        </div>)}
-      </div>
-      {!data.manual_enabled && <p className="note">Điều khiển thủ công chưa bật: cần cấu hình webhook flow 03 ở backend. Dùng script smoke test để kiểm tra nền trước.</p>}
+      <ManualControls device={device} enabled={data.manual_enabled} dashboardError={Boolean(dashboard.error)} onSent={refresh} />
     </section>)}
-    {message && <div className="alert" role="status">{message}</div>}
     <div className="bottom-grid">
       <section className="panel">
         <h2>Lệnh gần đây</h2><p>Theo dõi từ yêu cầu đến kết quả thiết bị.</p>
