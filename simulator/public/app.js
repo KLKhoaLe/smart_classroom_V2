@@ -1,3 +1,4 @@
+import { connectionPreset, connectionSummary, commandEvidence } from './demo-ui.js';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const specs=[['temperature','Nhiệt độ','°C',-10,60,.1,'◉'],['humidity','Độ ẩm','%',0,100,1,'◈'],['light_percent','Độ sáng','%',0,100,1,'☀'],['occupancy_count','Số người','người',0,100,1,'♙'],['co2_ppm','CO₂','ppm',300,5000,10,'≈'],['power_w','Công suất','W',0,20000,10,'ϟ'],['pm25_ug_m3','Bụi PM2.5','µg/m³',0,500,1,'⋯'],['water_l_min','Lưu lượng nước','L/min',0,100,.1,'◇']];
@@ -20,6 +21,13 @@ $$('[data-tab]').forEach(el=>el.onclick=()=>{tab=el.dataset.tab;$$('.page').forE
 $('#connection-form').addEventListener('input',()=>configDirty=true);
 $('#connection-form').onsubmit=e=>{e.preventDefault();act(async()=>{const patch=Object.fromEntries(new FormData(e.target));for(const k of ['interval_ms','heartbeat_ms','poll_ms'])patch[k]=Math.round(Number(patch[k])*1000);await api('config',patch);configDirty=false;},'Đã lưu cấu hình kết nối.');};
 $('#demo-settings').onclick=()=>{const f=$('#connection-form');f.elements.mode.value='http';for(const k of ['telemetry','heartbeat','ack'])f.elements[k+'_url'].value=`http://localhost:4311/${k}`;f.elements.claim_url.value='';configDirty=true;toast('Đã điền. Chạy npm run demo:receiver rồi bấm Lưu cấu hình.');};
+for(const [id,kind] of [['backend-settings','backend'],['flow01-settings','flow01']])$('#'+id).onclick=()=>{
+ const f=$('#connection-form');for(const [key,value] of Object.entries(connectionPreset(kind)))f.elements[key].value=value;
+ configDirty=true;$('#config-unsaved').textContent='Có cấu hình chưa lưu ở tab Kết nối n8n.';
+ toast('Đã điền cấu hình mẫu. Bấm Lưu cấu hình để áp dụng.');
+};
+$('#open-connection').onclick=()=>$('[data-tab="connection"]').click();
+$('#open-command-logs').onclick=()=>{$('#log-filter').value='all';$('#log-search').value=commandEvidence(state?.logs??[],state?.config.mode)?.id??'';$('[data-tab="logs"]').click();};
 $('#copy-payload').onclick=()=>act(async()=>{if(!state.last_payload)throw new Error('Chưa có payload.');await navigator.clipboard.writeText(JSON.stringify(state.last_payload,null,2));},'Đã sao chép payload.');
 $('#clear-logs').onclick=()=>act(()=>api('logs/clear',{}));
 $('#log-search').oninput=()=>renderLogs(true);$('#log-filter').onchange=()=>renderLogs(true);
@@ -34,6 +42,14 @@ function render(s){state=s;$('#server-status').textContent='● Node.js đang ho
  $('#run-detail').textContent=`${s.config.device_code} · Chu kỳ ${s.config.interval_ms/1000}s · Mẫu #${s.sequence}`;
  $('#start').disabled=s.status==='running';$('#pause').disabled=s.status!=='running';$('#stop').disabled=s.status==='stopped';$('#duplicate').disabled=!s.last_payload;
  const http=s.config.mode==='http';$('#mode-note').className='notice'+(http?' http':'');$('#mode-note').textContent=http?'HTTP đang bật • Kiểm tra nhật ký để biết đích đã nhận dữ liệu hay chưa. Thành công HTTP chưa đồng nghĩa workflow xử lý thành công.':'Chế độ xem trước • Chưa gửi đến n8n. Bạn có thể thử cảm biến và thiết bị, sau đó cấu hình tại “Kết nối n8n”.';
+ const notes=connectionSummary(s.config,s.status);
+ const readinessKey=JSON.stringify(notes);if($('#demo-readiness').dataset.key!==readinessKey){$('#demo-readiness').dataset.key=readinessKey;$('#demo-readiness').innerHTML=notes.length?'<ul>'+notes.map(note=>`<li>${esc(note)}</li>`).join(''):'<p>Đã điền đủ địa chỉ, phiên đang chạy và các chế độ giả lập lỗi đang tắt. Kiểm tra nhật ký HTTP và trạng thái trên dashboard để xác nhận kết nối.</p>';}
+ const endpointKey=JSON.stringify([s.config.telemetry_url,s.config.heartbeat_url,s.config.claim_url,s.config.ack_url]);
+ if($('#active-endpoints').dataset.key!==endpointKey){$('#active-endpoints').dataset.key=endpointKey;$('#active-endpoints').innerHTML=[['telemetry_url','Telemetry'],['heartbeat_url','Heartbeat'],['claim_url','Nhận lệnh'],['ack_url','ACK']].map(([key,label])=>`<dt>${label}</dt><dd>${esc(s.config[key]||'Chưa cấu hình')}</dd>`).join('');}
+ $('#config-unsaved').textContent=configDirty?'Có thay đổi kết nối chưa lưu. Cấu hình đang chạy vẫn là các địa chỉ phía trên.':'';
+ const evidence=commandEvidence(s.logs,s.config.mode);const evidenceKey=JSON.stringify(evidence);
+ if($('#command-evidence').dataset.key!==evidenceKey){$('#command-evidence').dataset.key=evidenceKey;$('#command-evidence').innerHTML=evidence?`<dl><dt>command_id</dt><dd><code>${esc(evidence.id)}</code></dd><dt>Thiết bị / kết quả thực thi</dt><dd>${esc(evidence.actuator)} · ${esc(evidence.status)}</dd><dt>Thời điểm thực thi</dt><dd>${esc(new Date(evidence.time).toLocaleString('vi-VN'))}</dd><dt>Phản hồi</dt><dd>${esc(evidence.ack)}</dd></dl><p class="helper">Trạng thái thực tế trên dashboard mới là kết quả backend xác nhận. HTTP ACK thành công không thay thế kiểm tra này.</p>`:'<p class="helper">Chưa có lệnh thực thi trong nhật ký hiện có. Gửi yêu cầu từ dashboard qua flow03.</p>';}
+ $('#ack-pending').textContent=`ACK đang chờ gửi lại: ${s.pending_acks}. Nhật ký có giới hạn; mất dòng log không có nghĩa lệnh chưa từng chạy.`;
  for(const key of ['generated','sent','commands','errors'])$('#stat-'+key).textContent=s.counters[key];
  if(!sensorDirty){for(const [key] of specs){$('#value-'+key).value=s.config.sensors[key];$('#range-'+key).value=s.config.sensors[key];}$('#door-open').checked=s.config.sensors.door_open;$('#jitter').checked=s.config.jitter;$('#sensor-dirty').textContent='Các giá trị đã được đồng bộ.';}
  if(!configDirty){const f=$('#connection-form');for(const el of f.elements){if(el.name&&el.name in s.config)el.value=el.name.endsWith('_ms')?s.config[el.name]/1000:s.config[el.name];}}
