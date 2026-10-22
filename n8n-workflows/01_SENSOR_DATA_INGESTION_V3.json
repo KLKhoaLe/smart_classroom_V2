@@ -20,7 +20,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// n8n Docker Desktop -> NestJS tren Windows.\n// Neu n8n chay truc tiep tren Windows, doi base_url thanh http://127.0.0.1:3001\nreturn {json:{input:$json.body,config:{base_url:'http://host.docker.internal:3001',max_age_seconds:120}}};"
+        "jsCode": "x"
       },
       "id": "87169f28-b797-4469-9ae3-8b691bdc9675",
       "name": "Configuration",
@@ -34,7 +34,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const input = $json.input;\nconst config = $json.config;\nconst errors = [];\nlet data = input;\nif (typeof data === 'string') {\n  try { data = JSON.parse(data); } catch { errors.push('Body không phải JSON hợp lệ.'); }\n}\nif (!data || typeof data !== 'object' || Array.isArray(data)) {\n  errors.push('Body phải là một JSON object.'); data = {};\n}\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nfor (const key of ['event_id','run_id']) if(typeof data[key] !== 'string' || !uuid.test(data[key])) errors.push(`${key} phải là UUID hợp lệ.`);\nif(typeof data.device_id !== 'string' || !data.device_id.trim() || data.device_id.length > 100) errors.push('device_id phải là mã thiết bị hoặc UUID.');\nif(!Number.isSafeInteger(data.sequence) || data.sequence < 0) errors.push('sequence phải là số nguyên không âm.');\nconst ranges = {temperature:[-10,60],humidity:[0,100],light_percent:[0,100],occupancy_count:[0,100],co2_ppm:[300,5000],power_w:[0,20000]};\nfor(const [key,[min,max]] of Object.entries(ranges)) {\n  const v=data[key];\n  if(typeof v!=='number'||!Number.isFinite(v)||v<min||v>max) errors.push(`${key} phải là số từ ${min} đến ${max}.`);\n}\nif(!Number.isInteger(data.occupancy_count)) errors.push('occupancy_count phải là số nguyên.');\nif(typeof data.door_open!=='boolean') errors.push('door_open phải là boolean.');\nconst time = typeof data.observed_at==='string' && /^\\d{4}-\\d\\d-\\d\\dT.*(?:Z|[+-]\\d\\d:\\d\\d)$/.test(data.observed_at) ? Date.parse(data.observed_at) : NaN;\nif(!Number.isFinite(time)) errors.push('observed_at phải là ISO timestamp có múi giờ.');\nelse if(time > Date.now()+60000) errors.push('observed_at vượt quá 60 giây trong tương lai.');\nfor(const key of ['simulated','occupancy']) if(data[key]!==undefined && typeof data[key]!=='boolean') errors.push(`${key} phải là boolean.`);\nif(typeof data.occupancy==='boolean' && data.occupancy!==(data.occupancy_count>0)) errors.push('occupancy không khớp occupancy_count.');\nfor(const key of ['device_code','room','room_code']) if(data[key]!==undefined&&(typeof data[key]!=='string'||!data[key].trim()||data[key].length>100)) errors.push(`${key} không hợp lệ.`);\nif(data.schema_version!==undefined && data.schema_version!==2)errors.push('Chỉ hỗ trợ telemetry schema_version 2 (khác với tên workflow V3).');\nif(data.light_raw!==undefined && (!Number.isInteger(data.light_raw)||data.light_raw<0||data.light_raw>4095))errors.push('light_raw phải là số nguyên từ 0 đến 4095.');\nfor(const [key,max] of [['pm25_ug_m3',500],['water_l_min',100]]) if(data[key]!==undefined&&(typeof data[key]!=='number'||!Number.isFinite(data[key])||data[key]<0||data[key]>max)) errors.push(`${key} không hợp lệ.`);\nif(data.actual_state!==undefined && (!data.actual_state || typeof data.actual_state!=='object'||Array.isArray(data.actual_state))) errors.push('actual_state phải là object.');\nconst fields=['device_id','device_code','event_id','run_id','sequence','observed_at','temperature','humidity','light_percent','occupancy_count','co2_ppm','power_w','door_open','simulated','occupancy','room','room_code','light_raw','schema_version','actual_state','pm25_ug_m3','water_l_min'];\nconst payload=Object.fromEntries(fields.filter(k=>data[k]!==undefined).map(k=>[k,data[k]]));\nconst raw = input && typeof input==='object'&&!Array.isArray(input) ? input : {received_body:input??null};\nreturn {json:{valid:errors.length===0,errors,telemetry_payload:payload,\n error_record:{device_code:typeof data.device_code==='string'?data.device_code.slice(0,80):typeof data.device_id==='string'?data.device_id.slice(0,80):undefined,reason:errors.join(' | ')||'UNKNOWN_VALIDATION_ERROR',raw_payload:raw},\n max_age_seconds:config.max_age_seconds}};\n"
+        "jsCode": "xxxxxxx"
       },
       "id": "9e095dda-cb26-4cec-b2a7-3003d83cf955",
       "name": "Validate Telemetry",
@@ -109,7 +109,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const response=$json;\nconst source=$('Validate Telemetry').first().json;\nconst status=response.statusCode;\nconst body=response.body;\nif(!Number.isInteger(status)) throw new Error('Không nhận được statusCode. Kiểm tra Full Response của Save Telemetry.');\nif(status>=200&&status<300){\n if(typeof body?.created!=='boolean'||!body?.telemetry?.id||!body?.telemetry?.raw_payload)throw new Error('Backend response sai contract v2.');\n return {json:{saved:true,created:body.created,telemetry:body.telemetry,max_age_seconds:source.max_age_seconds}};\n}\nif([400,404,409,422].includes(status)) return {json:{saved:false,error_record:{device_code:source.error_record.device_code,reason:'BACKEND_REJECTED_HTTP_'+status+' | '+JSON.stringify(body),raw_payload:source.telemetry_payload}}};\nthrow new Error('Backend HTTP '+status+': '+JSON.stringify(body));\n"
+        "jsCode": "xx"
       },
       "id": "18c014f2-501c-4424-85da-8b8e54a1f1fa",
       "name": "Check Backend Result",
@@ -191,7 +191,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const age_seconds=(Date.now()-Date.parse($json.telemetry.observed_at))/1000;\nreturn {json:{...$json,age_seconds,fresh:Number.isFinite(age_seconds)&&age_seconds<=$json.max_age_seconds&&age_seconds>=-60}};"
+        "jsCode": "x"
       },
       "id": "12297273-0bb0-407a-a059-92e1a2264fd7",
       "name": "Check Freshness",
@@ -239,7 +239,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const t=$json.telemetry;\nconst payload=t.raw_payload;\nreturn {json:{...payload,device_id:t.device_id,telemetry_id:t.id,correlation_id:t.event_id,event_id:t.event_id,workflow_version:'V3',ingestion_status:'ACCEPTED_NEW',ready_for_decision:true,occupancy:t.occupancy_count>0,age_seconds:$json.age_seconds,next_step:'Connect flow 02 here when available'}};\n"
+        "jsCode": "x"
       },
       "id": "92a0f37e-1941-413a-b965-968f09d70695",
       "name": "Ready for Flow 02",
@@ -253,7 +253,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "return {json:{ingestion_status:'STORED_STALE',telemetry_id:$json.telemetry.id,event_id:$json.telemetry.event_id,age_seconds:$json.age_seconds,ready_for_decision:false,reason:'Đã lưu lịch sử nhưng quá tuổi dữ liệu cho quyết định mới.'}};"
+        "jsCode": ""
       },
       "id": "85012cfc-cf57-4f81-b1cd-b9f81ec18b3e",
       "name": "Skip Stale Event",
@@ -267,7 +267,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "return {json:{ingestion_status:'DUPLICATE',telemetry_id:$json.telemetry.id,event_id:$json.telemetry.event_id,ready_for_decision:false,reason:'Backend đã có event_id này; không gọi lại flow 02.'}};"
+        "jsCode": ""
       },
       "id": "151e480d-832f-4799-a2d0-1f882457a212",
       "name": "Skip Duplicate Event",
@@ -306,7 +306,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "return {json:{ingestion_status:'REJECTED',error_id:$json.id,reason:$json.reason,ready_for_decision:false}};"
+        "jsCode": ""
       },
       "id": "47fad018-22f2-41b1-b027-a2a61886e00c",
       "name": "Rejected and Logged",

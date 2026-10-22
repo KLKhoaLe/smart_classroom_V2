@@ -14,6 +14,7 @@ export const scenarios = [
  {id:'co2',name:'Không khí ngột ngạt',description:'CO₂ 1.800 ppm, 35 người trong phòng.',values:{co2_ppm:1800,occupancy_count:35,temperature:30}},
  {id:'dark',name:'Phòng thiếu sáng',description:'Độ sáng 12%, có người cần sử dụng.',values:{light_percent:12,occupancy_count:15}},
  {id:'door',name:'Cửa mở bất thường',description:'Cửa mở khi không có người. Giờ ngoài lịch do n8n kiểm tra.',values:{door_open:true,occupancy_count:0}},
+ {id:'after-hours',name:'Cửa mở ngoài giờ',description:'Cửa mở, phòng trống; chạy ngoài lịch để kiểm tra WF09 → WF10.',values:{door_open:true,occupancy_count:0}},
  {id:'leak',name:'Nước chảy khi phòng trống',description:'Kịch bản mở rộng: 8 lít/phút.',values:{water_l_min:8,occupancy_count:0}},
  {id:'timeline',name:'Một buổi học • 90 giây',description:'0s bình thường → 30s nóng/đông → 60s phòng trống → 90s dừng timeline.',timeline:true}
 ];
