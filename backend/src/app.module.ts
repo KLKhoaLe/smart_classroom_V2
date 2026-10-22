@@ -1,3 +1,4 @@
+import { AutomationModule } from './modules/automation/automation.module';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { DatabaseModule } from './database/database.module';
@@ -10,7 +11,7 @@ import { DashboardService } from './modules/dashboard.service';
 import { AuthService } from './modules/auth.service';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [AutomationModule, DatabaseModule],
   controllers: [ApiController],
   providers: [
     DeviceService,

@@ -26,7 +26,7 @@ test('real HTTP: static UI, telemetry, heartbeat, command/ACK, token, config res
   app=await launch(data);const target=`http://127.0.0.1:${receiver.address().port}`;
   const post=async(path,b,headers={})=>fetch(app.url+path,{method:'POST',headers:{'content-type':'application/json',...headers},body:JSON.stringify(b)});
   const html=await (await fetch(app.url)).text();assert.match(html,/Phòng thí nghiệm IoT/);
-  for(const asset of ['/app.js','/styles.css'])assert.equal((await fetch(app.url+asset)).status,200);
+  for(const asset of ['/app.js','/demo-ui.js','/styles.css'])assert.equal((await fetch(app.url+asset)).status,200);
   assert.equal((await post('/api/config',{mode:'http',telemetry_url:target+'/t',heartbeat_url:target+'/h',ack_url:target+'/a',sensors:{temperature:34,occupancy_count:5}})).status,200);
   assert.equal((await (await post('/api/send',{})).json()).delivered,true);
   assert.equal((await (await post('/api/heartbeat',{})).json()).delivered,true);

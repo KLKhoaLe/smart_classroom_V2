@@ -15,7 +15,7 @@ const timer=setInterval(()=>sim.tick().catch(e=>sim.log('error',e.message)),250)
 function json(res,status,obj){res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify(obj));}
 async function body(req){let size=0,parts=[];for await(const chunk of req){size+=chunk.length;if(size>65536)throw new Error('Payload vượt 64 KB.');parts.push(chunk);}return JSON.parse(Buffer.concat(parts).toString()||'{}');}
 function equal(a,b){const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length&&timingSafeEqual(x,y);}
-const assets={'/':'index.html','/app.js':'app.js','/styles.css':'styles.css'};
+const assets={'/':'index.html','/app.js':'app.js','/demo-ui.js':'demo-ui.js','/styles.css':'styles.css'};
 const mime={html:'text/html',js:'text/javascript',css:'text/css'};
 const server=http.createServer(async(req,res)=>{
  try{

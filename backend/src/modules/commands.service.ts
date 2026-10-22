@@ -167,6 +167,7 @@ export class CommandsService {
     const d = await this.devices.resolve(ref);
     await this.expire();
     return this.db.transaction(async q => {
+      await q.query(`SELECT id FROM devices WHERE id=$1 FOR UPDATE`, [d.id]);
       // PostgreSQL SKIP LOCKED prevents two workers from claiming the same rows.
       const rows = await q.query(
         `WITH picked AS (
@@ -192,6 +193,7 @@ export class CommandsService {
     if (b.device_code && b.device_code !== d.code) throw new BadRequestException('device_code không khớp.');
 
     return this.db.transaction(async q => {
+      await q.query(`SELECT id FROM devices WHERE id=$1 FOR UPDATE`, [d.id]);
       const [c] = await q.query(`SELECT * FROM device_commands WHERE id=$1 FOR UPDATE`, [b.command_id]);
       if (!c) throw new NotFoundException('Không có command.');
       if (c.device_id !== d.id) throw new BadRequestException('ACK sai thiết bị.');
