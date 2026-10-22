@@ -1,0 +1,315 @@
+{
+  "name": "05 Device Feedback",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "flow05-feedback",
+        "options": {
+          "responseMode": "lastNode"
+        }
+      },
+      "id": "wh-ack",
+      "name": "Webhook ACK",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "flow05-feedback"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize webhook body and validate ACK payload\nconst input = $input.first().json;\nconst body = input.body ?? input;\n\n// Required fields\nconst command_id = body.command_id;\nconst device_id = body.device_id;\nconst status = body.status;\n\nif (!command_id) throw new Error('Missing command_id');\nif (!device_id) throw new Error('Missing device_id');\nif (!status) throw new Error('Missing status');\n\n// Validate status is SUCCESS or FAILED\nconst validStatuses = ['SUCCESS', 'FAILED'];\nif (!validStatuses.includes(status)) {\n  throw new Error('Invalid status: ' + status + '. Must be SUCCESS or FAILED.');\n}\n\n// UUID format validation for command_id\nconst uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (!uuidRegex.test(command_id)) {\n  throw new Error('Invalid command_id format');\n}\n\n// If SUCCESS, actual_state must be present\nif (status === 'SUCCESS' && !body.actual_state) {\n  throw new Error('SUCCESS ACK must include actual_state');\n}\n\nreturn [{\n  json: {\n    command_id: command_id,\n    device_id: device_id,\n    device_code: body.device_code ?? undefined,\n    status: status,\n    actual_state: body.actual_state ?? undefined,\n    message: body.message ?? undefined,\n    sequence: body.sequence ?? undefined,\n    observed_at: body.observed_at ?? new Date().toISOString()\n  }\n}];"
+      },
+      "id": "validate-ack",
+      "name": "Validate ACK Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_URL}}/api/commands/ack",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 10000,
+          "fullResponse": true
+        }
+      },
+      "id": "post-ack",
+      "name": "POST ACK to Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "backend-token",
+          "name": "Backend API Token"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst statusCode = response.statusCode ?? 200;\nconst responseBody = response.body ?? response;\n\n// Handle HTTP error responses from backend\nif (statusCode >= 400) {\n  return [{\n    json: {\n      success: false,\n      command_id: $('Validate ACK Payload').first().json.command_id,\n      device_id: $('Validate ACK Payload').first().json.device_id,\n      http_status: statusCode,\n      error: responseBody.message ?? 'Backend returned error',\n      error_type: statusCode === 404 ? 'COMMAND_NOT_FOUND' :\n                  statusCode === 400 ? 'VALIDATION_ERROR' :\n                  statusCode === 409 ? 'CONFLICT' : 'BACKEND_ERROR',\n      ack_status: $('Validate ACK Payload').first().json.status,\n      needs_incident: false\n    }\n  }];\n}\n\n// Parse successful response\nconst result = typeof responseBody === 'string' ? JSON.parse(responseBody) : responseBody;\n\nreturn [{\n  json: {\n    success: true,\n    command_id: result.command_id ?? $('Validate ACK Payload').first().json.command_id,\n    device_id: $('Validate ACK Payload').first().json.device_id,\n    ok: result.ok,\n    status: result.status,\n    duplicate: result.duplicate ?? false,\n    late: result.late ?? false,\n    applied: result.applied !== undefined ? result.applied : true,\n    ack_status: $('Validate ACK Payload').first().json.status,\n    needs_incident: $('Validate ACK Payload').first().json.status === 'FAILED'\n  }\n}];"
+      },
+      "id": "parse-response",
+      "name": "Parse ACK Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-success",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "ack-ok",
+      "name": "ACK Processed OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-failed",
+              "leftValue": "={{ $json.ack_status }}",
+              "rightValue": "FAILED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "is-failed",
+      "name": "Is FAILED ACK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-late",
+              "leftValue": "={{ $json.late }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "is-late",
+      "name": "Is Late ACK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1340, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "// FAILED ACK → create incident candidate for WF10\nconst ack = $input.first().json;\nreturn [{\n  json: {\n    incident_candidate: true,\n    type: 'COMMAND_FAILED',\n    severity: 'HIGH',\n    dedup_key: 'cmd-failed-' + ack.command_id,\n    room: 'A101',\n    device_id: ack.device_id,\n    command_id: ack.command_id,\n    evidence: {\n      ack_status: 'FAILED',\n      message: $('Validate ACK Payload').first().json.message ?? 'Device reported failure',\n      observed_at: $('Validate ACK Payload').first().json.observed_at\n    },\n    recovered: false,\n    source: 'WF05'\n  }\n}];"
+      },
+      "id": "failed-incident",
+      "name": "Build FAILED Incident",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// LATE_ACK → create incident candidate for WF10\nconst ack = $input.first().json;\nreturn [{\n  json: {\n    incident_candidate: true,\n    type: 'LATE_ACK',\n    severity: 'MEDIUM',\n    dedup_key: 'late-ack-' + ack.command_id,\n    room: 'A101',\n    device_id: ack.device_id,\n    command_id: ack.command_id,\n    evidence: {\n      ack_status: ack.ack_status,\n      late: true,\n      applied: ack.applied,\n      observed_at: $('Validate ACK Payload').first().json.observed_at\n    },\n    recovered: false,\n    source: 'WF05'\n  }\n}];"
+      },
+      "id": "late-ack-incident",
+      "name": "Build LATE_ACK Incident",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 340]
+    },
+    {
+      "parameters": {
+        "jsCode": "// SUCCESS ACK → normal completion\nconst ack = $input.first().json;\nreturn [{\n  json: {\n    success: true,\n    command_id: ack.command_id,\n    device_id: ack.device_id,\n    status: 'ACK',\n    duplicate: ack.duplicate,\n    message: ack.duplicate\n      ? 'Duplicate ACK ignored safely'\n      : 'Command acknowledged successfully, actual_state updated',\n    processed_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "success-output",
+      "name": "ACK Success Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ACK processing failed at backend level\nconst ack = $input.first().json;\nreturn [{\n  json: {\n    success: false,\n    command_id: ack.command_id,\n    device_id: ack.device_id,\n    error: ack.error,\n    error_type: ack.error_type,\n    http_status: ack.http_status,\n    message: 'Backend rejected ACK. Check command_id, device_id and sequence.',\n    processed_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "error-output",
+      "name": "ACK Error Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 560]
+    }
+  ],
+  "connections": {
+    "Webhook ACK": {
+      "main": [
+        [
+          {
+            "node": "Validate ACK Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate ACK Payload": {
+      "main": [
+        [
+          {
+            "node": "POST ACK to Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST ACK to Backend": {
+      "main": [
+        [
+          {
+            "node": "Parse ACK Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse ACK Response": {
+      "main": [
+        [
+          {
+            "node": "ACK Processed OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ACK Processed OK?": {
+      "main": [
+        [
+          {
+            "node": "Is FAILED ACK?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is Late ACK?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ACK Error Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is FAILED ACK?": {
+      "main": [
+        [
+          {
+            "node": "Build FAILED Incident",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Late ACK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Late ACK?": {
+      "main": [
+        [
+          {
+            "node": "Build LATE_ACK Incident",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ACK Success Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "vinh",
+      "id": "tag-vinh"
+    },
+    {
+      "name": "feedback",
+      "id": "tag-feedback"
+    }
+  ],
+  "triggerCount": 1,
+  "pinData": {},
+  "versionId": "flow05-v1"
+}
