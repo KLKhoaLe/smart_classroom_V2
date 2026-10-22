@@ -35,6 +35,7 @@ const server=http.createServer(async(req,res)=>{
   if(path==='/api/run'){sim.action(b.action);json(res,200,sim.snapshot());return;}
   if(path==='/api/scenario'){sim.applyScenario(b.id);json(res,200,sim.snapshot());return;}
   if(path==='/api/send'){json(res,200,await sim.telemetry(b.duplicate===true));return;}
+  if(path==='/api/send-invalid'){const payload={...(sim.lastPayload||sim.sample()),event_id:randomUUID(),temperature:999};json(res,200,{delivered:await sim.send('Invalid telemetry',sim.config.telemetry_url,payload),payload});return;}
   if(path==='/api/heartbeat'){json(res,200,{delivered:await sim.heartbeat()});return;}
   if(path==='/api/commands'){json(res,200,await sim.command(b));return;}
   if(path==='/api/local-command'){

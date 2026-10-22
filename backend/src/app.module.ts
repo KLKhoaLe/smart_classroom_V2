@@ -11,7 +11,10 @@ import { ApiController } from './modules/api.controller';
 import { DeviceService } from './modules/device.service';
 import { TelemetryService } from './modules/telemetry.service';
 import { CommandsService } from './modules/commands.service';
-import { DashboardService } from './modules/dashboard.service';
+import { DashboardService } from './modules/dashboard.service'; feat/incident-report-workflows
+import { IncidentReportService } from './modules/incident-report.service';
+@Module({imports:[AutomationModule,DatabaseModule],controllers:[ApiController],providers:[DeviceService,TelemetryService,CommandsService,DashboardService,IncidentReportService,{provide:APP_GUARD,useClass:LocalGuard}]})
+export class AppModule {}
 import { AuthService } from './modules/auth.service';
 
 @Module({
@@ -31,3 +34,4 @@ import { AuthService } from './modules/auth.service';
   ]
 })
 export class AppModule {}
+main

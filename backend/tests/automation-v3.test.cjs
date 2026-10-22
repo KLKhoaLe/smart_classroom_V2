@@ -8,7 +8,7 @@ const {TelemetryService}=require('../dist/modules/telemetry.service');
 const {CommandsService}=require('../dist/modules/commands.service');
 const {AutomationService,AutomationController}=require('../dist/modules/automation/automation.module');
 const {ApiController}=require('../dist/modules/api.controller');
-const {DashboardService}=require('../dist/modules/dashboard.service');
+const {DashboardService}=require('../dist/modules/dashboard.service');const {IncidentReportService}=require('../dist/modules/incident-report.service');
 const {DataSource}=require('typeorm');const {NestFactory}=require('@nestjs/core');const {ValidationPipe}=require('@nestjs/common');
 function wrap(pg){return {query:async(sql,args)=>{if(args===undefined)return (await pg.exec(sql)).at(-1)?.rows||[];const r=await pg.query(sql,args);return /^\s*(UPDATE|DELETE)\b/i.test(sql)?[r.rows,r.affectedRows??0]:r.rows;},transaction:fn=>pg.transaction(tx=>fn(wrap(tx)))};}
 const device='20000000-0000-4000-8000-000000000001';const types=['FAN','LIGHT','VENTILATION','DEHUMIDIFIER'];
@@ -41,7 +41,7 @@ test('MANUAL override: cancel unsent AUTO, stable retry TTL, conflict detection,
  const manual={device_id:device,source:'MANUAL',request_id:randomUUID(),command_type:'FAN',action:'OFF',override_minutes:5};
  const m=await s.automation.resolve(manual);assert.equal(m.commands.length,1);assert.equal((await s.commands.get(old.id)).status,'CANCELLED');
  const until=(await s.automation.overrides(device))[0].expires_at;assert.equal((await s.automation.resolve(manual)).duplicate,true);assert.deepEqual((await s.automation.overrides(device))[0].expires_at,until);
- await assert.rejects(()=>s.automation.resolve({...manual,action:'ON'}),/nội dung khác/);
+ await assert.rejects(()=>s.automation.resolve({...manual,action:'ON'}),/Request ID/);
  assert.equal((await s.automation.dispatch(m.commands[0].id)).command.status,'QUEUED');
  const b=await s.automation.resolve(await s.decision());assert.ok(b.skipped.some(x=>x.command_type==='FAN'&&x.reason==='MANUAL_OVERRIDE'));
 }finally{await s.pg.close();}});
@@ -58,8 +58,8 @@ test('dispatch rechecks latest telemetry; expired commands never queue',async()=
  const c=a.commands[1];await s.db.query("UPDATE device_commands SET requested_at=now()-interval '2 minutes',expires_at=now()-interval '1 minute' WHERE id=$1",[c.id]);assert.equal((await s.automation.dispatch(c.id)).command.status,'TIMED_OUT');
 }finally{await s.pg.close();}});
 
-test('HTTP DTO + simulator: AUTO → resolve → guarded dispatch → claim → ACK',async()=>{const s=await setup();let app;try{
- class M{};app=await NestFactory.create({module:M,controllers:[ApiController,AutomationController],providers:[{provide:DataSource,useValue:s.db},DeviceService,TelemetryService,CommandsService,DashboardService,AutomationService]},{logger:false});app.setGlobalPrefix('api');app.useGlobalPipes(new ValidationPipe({whitelist:true,transform:true,forbidUnknownValues:true}));await app.listen(0,'127.0.0.1');const url=await app.getUrl();
+test('HTTP DTO + simulator: AUTO â†’ resolve â†’ guarded dispatch â†’ claim â†’ ACK',async()=>{const s=await setup();let app;try{
+ class M{};app=await NestFactory.create({module:M,controllers:[ApiController,AutomationController],providers:[{provide:DataSource,useValue:s.db},DeviceService,TelemetryService,CommandsService,DashboardService,IncidentReportService,AutomationService]},{logger:false});app.setGlobalPrefix('api');app.useGlobalPipes(new ValidationPipe({whitelist:true,transform:true,forbidUnknownValues:true}));await app.listen(0,'127.0.0.1');const url=await app.getUrl();
  async function post(p,b){const r=await fetch(url+'/api/'+p,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b)});const v=await r.json();assert.equal(r.ok,true,JSON.stringify(v));return v;}
  const a=await post('automation/resolve',{...await s.decision(),actions:{FAN:'OFF'}});assert.equal(a.commands.find(x=>x.command_type==='FAN').action,'ON');
  for(const c of a.commands)await post(`automation/commands/${c.id}/dispatch`,{});

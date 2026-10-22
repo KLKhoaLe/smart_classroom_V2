@@ -31,10 +31,11 @@ test('real HTTP: static UI, telemetry, heartbeat, command/ACK, token, config res
   assert.equal((await (await post('/api/send',{})).json()).delivered,true);
   assert.equal((await (await post('/api/heartbeat',{})).json()).delivered,true);
   assert.equal(received[0].data.temperature,34);assert.equal(received[0].data.occupancy,true);assert.equal(received[1].path,'/h');
+  const invalid=await (await post('/api/send-invalid',{})).json();assert.equal(invalid.delivered,true);assert.equal(received[2].data.temperature,999);assert.notEqual(received[2].data.event_id,received[0].data.event_id);
   const cmd={command_id:'http-command',device_id:'ESP32_A101',command_type:'FAN',action:'ON'};
   assert.equal((await post('/api/commands',cmd)).status,401);
   const auth={authorization:'Bearer test-secret'};
-  const ack=await (await post('/api/commands',cmd,auth)).json();assert.equal(ack.status,'SUCCESS');assert.equal(received[2].path,'/a');assert.equal(received[2].data.fan_state,'ON');
+  const ack=await (await post('/api/commands',cmd,auth)).json();assert.equal(ack.status,'SUCCESS');assert.equal(received[3].path,'/a');assert.equal(received[3].data.fan_state,'ON');
   assert.equal((await (await fetch(app.url+'/api/state')).json()).devices.FAN,'ON');
   assert.equal((await (await post('/api/commands',cmd,auth)).json()).duplicate,true);
   assert.equal((await post('/api/config',{}, {origin:'https://not-this-app.test'})).status,403);

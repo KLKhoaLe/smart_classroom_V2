@@ -32,7 +32,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const items=$input.all();\nif(items.length!==1)throw new Error('Flow03 nhận 1 yêu cầu/lượt. Flow02: Run once for each item.');\nconst raw=items[0].json;\nconst fromWebhook=!!raw.webhookUrl;\nconst input=fromWebhook?raw.body:raw;\nreturn [{json:{input,from_webhook:fromWebhook,config:{\n backend_base_url:'http://host.docker.internal:3001',\n dispatch_mode:'BACKEND', // BACKEND: simulator HTTP hiện tại. FLOW04: sau khi thống nhất hợp đồng với Vinh.\n flow04_webhook_url:''\n}}}];"
+        "jsCode": ""
       },
       "id": "652d937f-0f0d-481c-82bb-e139b40cb7a3",
       "name": "Configuration",
@@ -45,7 +45,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const c=$input.first().json,b=c.input;\nconst fail=(reason)=>[{json:{eligible:false,automation_status:'REJECTED',reason,commands:[],workflow_version:'V3'}}];\nconst uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nconst types=['FAN','LIGHT','VENTILATION','DEHUMIDIFIER'];\nif(!b||typeof b!=='object'||Array.isArray(b))return fail('Payload phải là object.');\nif(typeof b.device_id!=='string'||!b.device_id.trim()||b.device_id.length>100)return fail('device_id không hợp lệ.');\nif(!['BACKEND','FLOW04'].includes(c.config.dispatch_mode))throw new Error('dispatch_mode không hợp lệ');\nif(c.config.dispatch_mode==='FLOW04'&&!/^https?:\\/\\//.test(c.config.flow04_webhook_url))throw new Error('Chưa cấu hình flow04_webhook_url');\nlet request;\nif(b.source==='AUTO'){\n if(c.from_webhook)return fail('Webhook này chỉ nhận MANUAL. AUTO phải đi từ flow02.');\n if(b.ready_for_commands!==true||b.decision_status!=='SAVED')return fail('Decision chưa sẵn sàng.');\n if(!uuid.test(b.decision_id||'')||!uuid.test(b.telemetry_id||''))return fail('Thiếu UUID decision/telemetry.');\n if(!Number.isFinite(Date.parse(b.valid_until))||Date.parse(b.valid_until)<=Date.now())return fail('DECISION_EXPIRED');\n if(!types.every(t=>['ON','OFF'].includes(b.actions?.[t])))return fail('Thiếu actions hợp lệ.');\n request={device_id:b.device_id,source:'AUTO',decision_id:b.decision_id};\n}else if(b.source==='MANUAL'){\n if(!uuid.test(b.request_id||''))return fail('MANUAL cần request_id UUID ổn định khi retry. Backend /commands/manual tự tạo ID.');\n if(!types.includes(b.command_type)||!['ON','OFF'].includes(b.action))return fail('Lệnh thủ công không hợp lệ.');\n if(!Number.isInteger(b.override_minutes)||b.override_minutes<1||b.override_minutes>120)return fail('override_minutes phải từ 1 đến 120.');\n request={device_id:b.device_id,source:'MANUAL',request_id:b.request_id,command_type:b.command_type,action:b.action,override_minutes:b.override_minutes};\n}else return fail('source phải là AUTO hoặc MANUAL.');\nreturn [{json:{...c,eligible:true,request}}];"
+        "jsCode": ""
       },
       "id": "9b72a47d-0350-4e77-96f2-256c8f6f40b5",
       "name": "Validate Request",
@@ -121,7 +121,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const r=$input.first().json;\nif(r.statusCode<200||r.statusCode>=300||!Array.isArray(r.body?.commands_to_dispatch))throw new Error('Backend automation trả sai hợp đồng');\nreturn [{json:{...r.body,config:$('Validate Request').first().json.config,has_commands:r.body.commands_to_dispatch.length>0}}];"
+        "jsCode": ""
       },
       "id": "10efc81b-a5b2-4504-b0e5-ec5e8b6f3f2d",
       "name": "Read Resolution",
@@ -168,7 +168,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const r=$input.first().json;\nreturn r.commands_to_dispatch.map(c=>({json:{config:r.config,request_key:r.request_key,command_id:c.command_id||c.id,device_id:c.device_id,device_code:r.device_code,decision_id:c.decision_id,command_type:c.command_type,action:c.action,sequence:c.sequence,expires_at:c.expires_at,source:c.source,status:c.status,workflow_version:'V3'},pairedItem:{item:0}}));"
+        "jsCode": "xx"
       },
       "id": "064f8717-2bf3-4c00-91a3-988f6e04c780",
       "name": "Split Commands",
@@ -244,7 +244,7 @@
     },
     {
       "parameters": {
-        "jsCode": "return $input.all().map((i,index)=>{\n const r=i.json;if(r.statusCode<200||r.statusCode>=300||!r.body?.command)throw new Error('Invalid dispatch response');\n const c=r.body.command;\n return {json:{workflow_version:'V3',command_id:c.command_id||c.id,device_id:c.device_id,command_type:c.command_type,action:c.action,status:c.status,dispatch_reason:r.body.reason,dispatched:r.body.dispatched,ack_confirmed:c.status==='ACK',next_step:'Simulator HTTP claim → ACK. QUEUED không có nghĩa thiết bị đã thực hiện.'},pairedItem:{item:index}};\n});"
+        "jsCode": "xxx"
       },
       "id": "8cefa3b9-960a-4922-a22d-339934022afa",
       "name": "Backend Dispatch Result",
@@ -286,7 +286,7 @@
     },
     {
       "parameters": {
-        "jsCode": "return $input.all().map((i,index)=>({json:{workflow_version:'V3',handoff_status:'HTTP_ACCEPTED',http_status:i.json.statusCode,ack_confirmed:false,next_step:'Kiểm tra execution flow04 và ACK. HTTP 2xx chỉ xác nhận webhook nhận yêu cầu.'},pairedItem:{item:index}}));"
+        "jsCode": "xxxxxxx"
       },
       "id": "42ee6eb5-b42a-4315-b222-801caee02162",
       "name": "Flow 04 Handoff Result",
@@ -299,7 +299,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const r=$input.first().json;\nreturn [{json:{workflow_version:'V3',automation_status:r.automation_status,device_id:r.device_id,decision_id:r.decision_id,reason:r.reason,skipped:r.skipped,duplicate:r.duplicate,commands:r.commands||[],next_step:'Không phát lệnh ở lượt này. Xem reason/skipped; chờ telemetry mới hoặc gửi yêu cầu thủ công mới sau khi hết chặn.'}}];"
+        "jsCode": "x"
       },
       "id": "5b792ee9-c22f-4791-9e13-0c83d32a21be",
       "name": "No Command Required",
@@ -312,7 +312,7 @@
     },
     {
       "parameters": {
-        "jsCode": "return $input.all();"
+        "jsCode": ""
       },
       "id": "f68ead13-2cdc-435a-9f8f-617002fe0098",
       "name": "Rejected Request",

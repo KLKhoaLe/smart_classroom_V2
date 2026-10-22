@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseOverrides, remainingSeconds, countdown, overrideMode, manualPayload, sendManualRequest } from '../lib/manual-control.ts';
-import { isAllowedBackendGet } from '../lib/backend-routes.ts';
+import { isAllowedBackendGet,isAllowedBackendMutation } from '../lib/backend-routes.ts';
 
 const device = '20000000-0000-4000-8000-000000000001';
 const start = Date.parse('2026-10-20T12:00:00Z');
@@ -87,7 +87,7 @@ test('uncertain network failure does not automatically resubmit a command', asyn
   assert.equal(calls, 1);
 });
 
-test('proxy permits only existing GET routes and the single override-read route', () => {
+test('proxy GET routes remain scoped to product reads and override reads', () => {
   assert.equal(isAllowedBackendGet(['dashboard']), true);
   assert.equal(isAllowedBackendGet(['automation', 'overrides', device]), true);
   assert.equal(isAllowedBackendGet(['automation', 'overrides', 'ESP32_A101']), true);
@@ -96,4 +96,13 @@ test('proxy permits only existing GET routes and the single override-read route'
     ['automation', 'overrides', device, 'extra'], ['dashboard', '']]) {
     assert.equal(isAllowedBackendGet(route), false, route.join('/'));
   }
+});
+
+test('proxy permits incident/report detail reads and only scoped workflow/UI mutations',()=>{
+ assert.equal(isAllowedBackendGet(['incidents']),true);assert.equal(isAllowedBackendGet(['incidents',device]),true);
+ assert.equal(isAllowedBackendGet(['reports',device]),true);assert.equal(isAllowedBackendGet(['reports','weekly','context','A101']),true);
+ assert.equal(isAllowedBackendMutation('POST',['incidents']),true);assert.equal(isAllowedBackendMutation('POST',['reports','daily','A101']),true);
+ assert.equal(isAllowedBackendMutation('POST',['reports','weekly','A101']),true);assert.equal(isAllowedBackendMutation('PATCH',['incidents',device]),true);
+ assert.equal(isAllowedBackendMutation('PATCH',['reports',device]),true);assert.equal(isAllowedBackendMutation('PATCH',['notifications',device,'read']),true);
+ assert.equal(isAllowedBackendMutation('POST',['automation','resolve']),false);assert.equal(isAllowedBackendMutation('DELETE',['incidents',device]),false);
 });

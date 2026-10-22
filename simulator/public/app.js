@@ -16,6 +16,7 @@ $('#apply-sensors').onclick=()=>act(saveSensors,'Đã áp dụng bộ cảm bi�
 $('#send-once').onclick=()=>act(async()=>{if(sensorDirty)await saveSensors();const r=await api('send',{});if(r.skipped)throw new Error('Đang gửi bản tin trước, vui lòng chờ.');toast(r.mode==='preview'?'Đã tạo mẫu xem trước.':r.delivered?'Đích đã nhận HTTP. Xem execution n8n để xác nhận xử lý.':'Chưa gửi được. Mở Nhật ký sự kiện.',!r.delivered);});
 for(const a of ['start','pause','stop'])$('#'+a).onclick=()=>act(async()=>{if(a==='start'&&sensorDirty)await saveSensors();await api('run',{action:a});});
 $('#duplicate').onclick=()=>act(async()=>{const r=await api('send',{duplicate:true});if(r.skipped)throw new Error('Đang gửi bản tin trước.');toast(r.delivered?'Đã gửi lại bản tin với cùng event_id.':'Chưa gửi được. Kiểm tra nhật ký.',!r.delivered);});
+$('#invalid-payload').onclick=()=>act(async()=>{const r=await api('send-invalid',{});toast(r.delivered?'Đã gửi payload sai để kiểm tra luồng validation.':'Payload chưa gửi được; xem cấu hình và nhật ký.',!r.delivered);});
 $$('[data-fault]').forEach(el=>el.onchange=()=>act(()=>api('config',{faults:{[el.dataset.fault]:el.checked}})));
 $$('[data-tab]').forEach(el=>el.onclick=()=>{tab=el.dataset.tab;$$('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+tab));$$('.nav').forEach(n=>n.classList.toggle('active',n===el));if(tab==='logs')renderLogs();});
 $('#connection-form').addEventListener('input',()=>configDirty=true);

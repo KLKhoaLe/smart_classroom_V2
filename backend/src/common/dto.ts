@@ -250,3 +250,35 @@ export class SimulationConfigDto {
   @IsObject()
   sensors?: Record<string, unknown>;
 }
+
+export class IncidentCandidateDto {
+ @ApiProperty({required:false}) @IsOptional() @IsString() device_id?:string;
+ @ApiProperty({required:false}) @IsOptional() @IsString() room?:string;
+ @ApiProperty() @IsString() @MaxLength(80) type!:string;
+ @ApiProperty() @IsString() @MaxLength(20) severity!:string;
+ @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(250) title!:string;
+ @ApiProperty({required:false}) @IsOptional() @IsString() @MaxLength(180) dedup_key?:string;
+ @ApiProperty({required:false}) @IsOptional() @IsDateString() observed_at?:string;
+ @ApiProperty({required:false}) @IsOptional() @IsObject() details?:Record<string,unknown>;
+}
+export class IncidentUpdateDto {
+ @ApiProperty({required:false}) @IsOptional() @IsIn(['OPEN','ACKNOWLEDGED','RESOLVED']) status?:string;
+ @ApiProperty({required:false}) @IsOptional() @IsIn(['INFO','WARNING','CRITICAL']) severity?:string;
+ @ApiProperty({required:false}) @IsOptional() @IsString() @MaxLength(150) assigned_to?:string;
+}
+export class ReportSaveDto {
+ @ApiProperty() @IsString() room!:string;
+ @ApiProperty() @IsIn(['DAILY','WEEKLY']) type!:string;
+ @ApiProperty() @IsDateString() period_start!:string;
+ @ApiProperty() @IsDateString() period_end!:string;
+ @ApiProperty({required:false}) @IsOptional() @IsObject() metrics?:Record<string,unknown>;
+ @ApiProperty({required:false}) @IsOptional() @IsString() @MaxLength(5000) summary?:string;
+ @ApiProperty({required:false}) @IsOptional() @IsIn(['DRAFT','APPROVED','REJECTED']) status?:string;
+}
+export class WeeklyReportSaveDto {
+ @ApiProperty() @IsDateString() period_start!:string;
+ @ApiProperty() @IsDateString() period_end!:string;
+ @ApiProperty({required:false}) @IsOptional() @IsObject() metrics?:Record<string,unknown>;
+ @ApiProperty({required:false}) @IsOptional() @IsString() @MaxLength(5000) summary?:string;
+}
+export class ReportDecisionDto { @ApiProperty() @IsIn(['APPROVED','REJECTED']) status!:string; }

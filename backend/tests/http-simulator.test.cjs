@@ -12,7 +12,7 @@ const {ApiController}=require('../dist/modules/api.controller');
 const {DeviceService}=require('../dist/modules/device.service');
 const {TelemetryService}=require('../dist/modules/telemetry.service');
 const {CommandsService}=require('../dist/modules/commands.service');
-const {DashboardService}=require('../dist/modules/dashboard.service');
+const {DashboardService}=require('../dist/modules/dashboard.service');const {IncidentReportService}=require('../dist/modules/incident-report.service');
 // Match TypeORM PostgresQueryRunner raw UPDATE/DELETE return shape.
 function wrap(pg){return {query:async(sql,args)=>{
  if(args===undefined){const results=await pg.exec(sql);return results.at(-1)?.rows||[];}
@@ -25,7 +25,7 @@ test('Nest HTTP + bundled simulator: telemetry -> command -> claim -> ACK -> das
  try{
   await new InitialSchema1792200000000().up(db);await seed(db);
   class TestModule{}
-  app=await NestFactory.create({module:TestModule,controllers:[ApiController],providers:[{provide:DataSource,useValue:db},DeviceService,TelemetryService,CommandsService,DashboardService]},{logger:false});
+  app=await NestFactory.create({module:TestModule,controllers:[ApiController],providers:[{provide:DataSource,useValue:db},DeviceService,TelemetryService,CommandsService,DashboardService,IncidentReportService]},{logger:false});
   app.setGlobalPrefix('api');app.useGlobalPipes(new ValidationPipe({whitelist:true,transform:true,forbidUnknownValues:true}));await app.listen(0,'127.0.0.1');
   const url=await app.getUrl();
   const {Simulator}=await import(pathToFileURL(path.resolve(__dirname,'../../simulator/src/engine.js')).href);
