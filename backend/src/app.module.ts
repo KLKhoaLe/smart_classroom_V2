@@ -7,5 +7,18 @@ import { DeviceService } from './modules/device.service';
 import { TelemetryService } from './modules/telemetry.service';
 import { CommandsService } from './modules/commands.service';
 import { DashboardService } from './modules/dashboard.service';
-@Module({imports:[DatabaseModule],controllers:[ApiController],providers:[DeviceService,TelemetryService,CommandsService,DashboardService,{provide:APP_GUARD,useClass:LocalGuard}]})
+import { AuthService } from './modules/auth.service';
+
+@Module({
+  imports: [DatabaseModule],
+  controllers: [ApiController],
+  providers: [
+    DeviceService,
+    TelemetryService,
+    CommandsService,
+    DashboardService,
+    AuthService,
+    { provide: APP_GUARD, useClass: LocalGuard }
+  ]
+})
 export class AppModule {}
