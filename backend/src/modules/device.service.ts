@@ -1,3 +1,4 @@
+import { actuatorLevel } from '../common/actuator-level';
 import { ConflictException } from '@nestjs/common';
 import { ClearOverrideDto, TYPES } from '../common/dto';
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
@@ -128,13 +129,14 @@ export class DeviceService {
   async setOverride(b: OverrideDto) {
     const d = await this.resolve(b.device_id);
     const minutes = b.override_minutes || 30;
+    const level = actuatorLevel(b.command_type,b.action,b.level);
     const [row] = await this.db.query(
-      `INSERT INTO manual_overrides(id, device_id, command_type, action, expires_at)
-       VALUES($1, $2, $3, $4, now() + ($5 * interval '1 minute'))
+      `INSERT INTO manual_overrides(id, device_id, command_type, action, expires_at, level)
+       VALUES($1, $2, $3, $4, now() + ($5 * interval '1 minute'), $6)
        ON CONFLICT(device_id, command_type)
-       DO UPDATE SET action=EXCLUDED.action, expires_at=EXCLUDED.expires_at
+       DO UPDATE SET action=EXCLUDED.action, expires_at=EXCLUDED.expires_at, level=EXCLUDED.level
        RETURNING *`,
-      [randomUUID(), d.id, b.command_type, b.action, minutes]
+      [randomUUID(), d.id, b.command_type, b.action, minutes, level]
     );
     return { ok: true, device_code: d.code, ...row };
   }

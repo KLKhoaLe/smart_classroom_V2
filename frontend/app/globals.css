@@ -30,3 +30,6 @@
 .manual-controls .alert{margin-top:14px;margin-bottom:0}
 .manual-controls button:focus-visible,.manual-toolbar select:focus-visible{outline:2px solid #3e62e7;outline-offset:3px}
 @media(max-width:650px){.manual-controls .device-grid{grid-template-columns:1fr}.manual-toolbar{align-items:flex-start}}
+
+/* Actuator controls: a draft level is distinct from ACK-confirmed state. */
+.level-control{display:grid;gap:8px;margin:16px 0;font-size:14px}.level-control input{width:100%;accent-color:#2563eb;min-height:28px}.command-feedback{font-size:13px;color:#475569}.command-error{color:#b91c1c;font-weight:600}

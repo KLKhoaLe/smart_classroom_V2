@@ -3,9 +3,12 @@ import { DataSource, EntityManager } from 'typeorm';
 import { IsIn, IsOptional, IsString, IsUUID, IsInt, Min, Max, MaxLength, IsNotEmpty } from 'class-validator';
 import { randomUUID, createHash } from 'node:crypto';
 
+import { actuatorLevel } from '../../common/actuator-level';
+
 const TYPES = ['FAN','LIGHT','VENTILATION','DEHUMIDIFIER'];
 const ACTIVE = ['PENDING','QUEUED','SENT'];
 export class ResolveAutomationDto {
+ @IsOptional() @IsInt() @Min(0) @Max(100) level?:number;
  @IsString() @IsNotEmpty() @MaxLength(100) device_id!:string;
  @IsIn(['AUTO','MANUAL']) source!:string;
  @IsOptional() @IsUUID() decision_id?:string;
@@ -44,14 +47,21 @@ export class AutomationService {
   return {reason:null,a};
  }
  async resolve(b:ResolveAutomationDto) {
+  if(b.source==='AUTO' && b.level != null)throw new BadRequestException('AUTO levels require a saved decision contract.');
+  const requestedLevel = b.source==='MANUAL' ? actuatorLevel(b.command_type!,b.action!,b.level) : null;
   if(b.source==='AUTO'&&!b.decision_id)throw new BadRequestException('AUTO cần decision_id.');
   if(b.source==='MANUAL'&&(!b.request_id||!b.command_type||!b.action||!b.override_minutes))
    throw new BadRequestException('MANUAL cần request_id, command_type, action, override_minutes.');
   return this.db.transaction(async q=>{
    const d=await this.device(q,b.device_id);
+   if(b.source==='MANUAL') {
+    const [intent]=await q.query("SELECT device_id,payload FROM device_events WHERE id=$1 AND event_type='MANUAL_LEVEL_REQUESTED'",[b.request_id]);
+    if(intent && (intent.device_id!==d.id || intent.payload.command_type!==b.command_type || intent.payload.action!==b.action || intent.payload.override_minutes!==b.override_minutes || intent.payload.level!==requestedLevel))
+     throw new ConflictException('WF03 làm mất/thay đổi mức đã yêu cầu. Cập nhật workflow ACTUATOR_LEVELS trước khi thử lại.');
+   }
    const [{now:clock}]=await q.query('SELECT clock_timestamp() AS now'); const now=new Date(clock).getTime();
    const key=b.source==='AUTO'?`V3:AUTO:${b.decision_id}`:`V3:MANUAL:${b.request_id}`;
-   const fingerprint=createHash('sha256').update(JSON.stringify([d.id,b.source,b.source==='AUTO'?b.decision_id:[b.command_type,b.action,b.override_minutes]])).digest('hex');
+   const fingerprint=createHash('sha256').update(JSON.stringify([d.id,b.source,b.source==='AUTO'?b.decision_id:[b.command_type,b.action,b.override_minutes,...(requestedLevel===null?[]:[requestedLevel])]])).digest('hex');
    const [previous]=await q.query('SELECT * FROM automation_runs WHERE request_key=$1',[key]);
    if(previous){
     if(previous.fingerprint!==fingerprint)throw new ConflictException('Request ID đã dùng cho nội dung khác.');
@@ -81,6 +91,8 @@ export class AutomationService {
    const cooldown=Number.isFinite(cooldownRaw)?Math.max(0,Math.min(300,cooldownRaw)):15;
    for(const [type,action] of Object.entries(actions)){
     if(!TYPES.includes(type))throw new BadRequestException('Loại thiết bị không hợp lệ.');
+    if(d.capabilities && !d.capabilities.includes(type))throw new BadRequestException('Thiết bị không hỗ trợ '+type);
+    const level = b.source==='MANUAL' ? requestedLevel : null;
     const pending=await q.query(`SELECT * FROM device_commands WHERE device_id=$1 AND command_type=$2 AND status IN ('PENDING','QUEUED','SENT') ORDER BY sequence DESC FOR UPDATE`,[d.id,type]);
     if(b.source==='AUTO'){
      const [override]=await q.query(`SELECT * FROM manual_overrides WHERE device_id=$1 AND command_type=$2 AND expires_at>clock_timestamp()`,[d.id,type]);
@@ -91,14 +103,14 @@ export class AutomationService {
     if(b.source==='AUTO'&&pending.length){skipped.push({command_type:type,reason:'COMMAND_IN_FLIGHT'});continue;}
     if(b.source==='MANUAL'){
      await q.query(`UPDATE device_commands SET status='CANCELLED' WHERE device_id=$1 AND command_type=$2 AND status IN ('PENDING','QUEUED')`,[d.id,type]);
-     await q.query(`INSERT INTO manual_overrides(id,device_id,command_type,action,expires_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(device_id,command_type) DO UPDATE SET action=EXCLUDED.action,expires_at=EXCLUDED.expires_at,created_at=clock_timestamp()`,[randomUUID(),d.id,type,action,new Date(now+b.override_minutes!*60000)]);
+     await q.query(`INSERT INTO manual_overrides(id,device_id,command_type,action,expires_at,level) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(device_id,command_type) DO UPDATE SET action=EXCLUDED.action,expires_at=EXCLUDED.expires_at,level=EXCLUDED.level,created_at=clock_timestamp()`,[randomUUID(),d.id,type,action,new Date(now+b.override_minutes!*60000),level]);
     }
     const [state]=await q.query(`SELECT * FROM device_states WHERE device_id=$1 AND command_type=$2`,[d.id,type]);
-    if(state?.actual_state===action){skipped.push({command_type:type,reason:'ALREADY_CONFIRMED',override_registered:b.source==='MANUAL'});continue;}
+    if(state?.actual_state===action && (level===null || state.actual_level===level)){skipped.push({command_type:type,reason:'ALREADY_CONFIRMED',override_registered:b.source==='MANUAL'});continue;}
     const [last]=await q.query(`SELECT requested_at FROM device_commands WHERE device_id=$1 AND command_type=$2 ORDER BY sequence DESC LIMIT 1`,[d.id,type]);
     if(b.source==='AUTO'&&last&&now-new Date(last.requested_at).getTime()<cooldown*1000){skipped.push({command_type:type,reason:'COOLDOWN'});continue;}
-    const [c]=await q.query(`INSERT INTO device_commands(id,device_id,decision_id,idempotency_key,command_type,action,source,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *,id AS command_id`,[randomUUID(),d.id,b.source==='AUTO'?b.decision_id:null,`${key}:${type}`,type,action,b.source,new Date(deadline)]);
-    await q.query(`INSERT INTO device_states(device_id,command_type,desired_state,desired_sequence) VALUES($1,$2,$3,$4) ON CONFLICT(device_id,command_type) DO UPDATE SET desired_state=EXCLUDED.desired_state,desired_sequence=EXCLUDED.desired_sequence`,[d.id,type,action,c.sequence]);
+    const [c]=await q.query(`INSERT INTO device_commands(id,device_id,decision_id,idempotency_key,command_type,action,source,expires_at,level) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *,id AS command_id`,[randomUUID(),d.id,b.source==='AUTO'?b.decision_id:null,`${key}:${type}`,type,action,b.source,new Date(deadline),level]);
+    await q.query(`INSERT INTO device_states(device_id,command_type,desired_state,desired_sequence,desired_level) VALUES($1,$2,$3,$4,$5) ON CONFLICT(device_id,command_type) DO UPDATE SET desired_state=EXCLUDED.desired_state,desired_sequence=EXCLUDED.desired_sequence,desired_level=EXCLUDED.desired_level`,[d.id,type,action,c.sequence,level]);
     commands.push(c);
    }
    return finish();
@@ -122,8 +134,8 @@ export class AutomationService {
     const [override]=await q.query('SELECT id FROM manual_overrides WHERE device_id=$1 AND command_type=$2 AND expires_at>clock_timestamp()',[d.id,c.command_type]);
     if(override)reason='MANUAL_OVERRIDE';
    }else if(c.source==='MANUAL'){
-    const [override]=await q.query('SELECT action FROM manual_overrides WHERE device_id=$1 AND command_type=$2 AND expires_at>clock_timestamp()',[d.id,c.command_type]);
-    if(!override||override.action!==c.action)reason='MANUAL_OVERRIDE_CHANGED';
+    const [override]=await q.query('SELECT action,level FROM manual_overrides WHERE device_id=$1 AND command_type=$2 AND expires_at>clock_timestamp()',[d.id,c.command_type]);
+    if(!override||override.action!==c.action||(override.level??null)!==(c.level??null))reason='MANUAL_OVERRIDE_CHANGED';
    }else reason='UNSUPPORTED_SOURCE';
    const status=reason?(reason==='COMMAND_EXPIRED'?'TIMED_OUT':'CANCELLED'):'QUEUED';
    await q.query('UPDATE device_commands SET status=$2 WHERE id=$1',[id,status]);

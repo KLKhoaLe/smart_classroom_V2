@@ -38,7 +38,7 @@ export default function Dashboard() {
         <span className={'pill ' + (device.online ? 'green' : 'muted')}>{device.online ? 'Online ở lần đọc gần nhất' : 'Chưa online / Offline'}</span>
       </div>
       <RoomReadings device={device} />
-      <ManualControls device={device} enabled={data.manual_enabled} dashboardError={Boolean(dashboard.error)} onSent={refresh} />
+      <ManualControls levelsEnabled={data.manual_levels_enabled === true} commands={commands} device={device} enabled={data.manual_enabled} dashboardError={Boolean(dashboard.error || commandResource.error)} onSent={refresh} />
     </section>)}
     <div className="bottom-grid">
       <section className="panel">
@@ -50,7 +50,7 @@ export default function Dashboard() {
         <div className="table-scroll"><table>
           <thead><tr><th>Thiết bị</th><th>Lệnh</th><th>Trạng thái</th></tr></thead>
           <tbody>{commands.slice(0, 8).map(command => <tr key={command.id}>
-            <td>{command.device_code}</td><td>{command.command_type} · {command.action}</td>
+            <td>{command.device_code}</td><td>{command.command_type} · {command.action}{command.level != null ? ` · ${command.level}${command.command_type === 'LIGHT' ? '%' : '/3'}` : ''}</td>
             <td><span className={'pill ' + (command.status === 'ACK' ? 'green' : 'muted')}>{command.status}</span></td>
           </tr>)}</tbody>
         </table></div>

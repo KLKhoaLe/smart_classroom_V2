@@ -32,7 +32,7 @@ test('Vinh Backend Enhancements: Migration, RBAC, Commands Lifecycle, Capabiliti
 
   try {
     console.log('Step 2: Migrations...');
-    await new InitialSchema1792200000000().up(db);
+    await new InitialSchema1792200000000().up(db);await new (require('../dist/database/migrations/1792700000000-ActuatorLevels').ActuatorLevels1792700000000)().up(db);
     await new VinhBackendEnhancements1792300000000().up(db);
     console.log('Step 3: Seed...');
     await seed(db);

@@ -18,7 +18,7 @@ function wrap(pg){return {query:async(sql,args)=>{
 test('PostgreSQL engine: migrate, seed idempotency, telemetry, command lifecycle, stale ACK, rollback',async()=>{
  const pg=new PGlite();const db=wrap(pg);const migration=new InitialSchema1792200000000();
  try{
-  await migration.up(db);await seed(db);await seed(db);
+  await migration.up(db);await new (require('../dist/database/migrations/1792700000000-ActuatorLevels').ActuatorLevels1792700000000)().up(db);await seed(db);await seed(db);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM rooms'))[0].n,1);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM device_states'))[0].n,4);
   const devices=new DeviceService(db),telemetry=new TelemetryService(db,devices),commands=new CommandsService(db,devices),dashboard=new DashboardService(db);
@@ -43,6 +43,6 @@ test('PostgreSQL engine: migrate, seed idempotency, telemetry, command lifecycle
   assert.equal((await devices.states('ESP32_A101')).find(x=>x.command_type==='FAN').actual_state,'ON');
   assert.equal((await dashboard.get()).stats.telemetry_count,1);
   await migration.down(db);assert.equal((await db.query("SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema='public'"))[0].n,0);
-  await migration.up(db);await seed(db);assert.equal((await devices.list()).length,1);
+  await migration.up(db);await new (require('../dist/database/migrations/1792700000000-ActuatorLevels').ActuatorLevels1792700000000)().up(db);await seed(db);assert.equal((await devices.list()).length,1);
  }finally{await pg.close();}
 });

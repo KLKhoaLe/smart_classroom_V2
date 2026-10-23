@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, ConflictException, NotFoundException, 
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { AckDto, CommandDto, ManualDto, PaginationDto } from '../common/dto';
+import { actuatorLevel } from '../common/actuator-level';
 import { DeviceService } from './device.service';
 
 @Injectable()
@@ -9,6 +10,7 @@ export class CommandsService {
   constructor(private readonly db: DataSource, private readonly devices: DeviceService) {}
 
   async create(b: CommandDto) {
+    const level = actuatorLevel(b.command_type,b.action,b.level);
     const d = await this.devices.resolve(b.device_id);
 
     // Kiểm tra capability của thiết bị
@@ -24,11 +26,11 @@ export class CommandsService {
       }
 
       const rows = await q.query(
-        `INSERT INTO device_commands(id,device_id,decision_id,idempotency_key,command_type,action,source,expires_at) 
-         VALUES($1,$2,$3,$4,$5,$6,$7,now()+($8 * interval '1 second')) 
+        `INSERT INTO device_commands(id,device_id,decision_id,idempotency_key,command_type,action,source,expires_at,level) 
+         VALUES($1,$2,$3,$4,$5,$6,$7,now()+($8 * interval '1 second'),$9) 
          ON CONFLICT(idempotency_key) DO NOTHING 
          RETURNING *, id AS command_id`,
-        [randomUUID(), d.id, b.decision_id ?? null, b.idempotency_key, b.command_type, b.action, b.source, b.ttl_seconds ?? 60]
+        [randomUUID(), d.id, b.decision_id ?? null, b.idempotency_key, b.command_type, b.action, b.source, b.ttl_seconds ?? 60, level]
       );
 
       if (!rows.length) {
@@ -36,7 +38,7 @@ export class CommandsService {
         if (
           old.device_id !== d.id ||
           old.command_type !== b.command_type ||
-          old.action !== b.action ||
+          old.action !== b.action || (old.level ?? null) !== level ||
           old.source !== b.source ||
           (old.decision_id ?? null) !== (b.decision_id ?? null)
         ) {
@@ -47,12 +49,12 @@ export class CommandsService {
 
       const c = rows[0];
       await q.query(
-        `INSERT INTO device_states(device_id,command_type,desired_state,desired_sequence) 
-         VALUES($1,$2,$3,$4) 
+        `INSERT INTO device_states(device_id,command_type,desired_state,desired_sequence,desired_level) 
+         VALUES($1,$2,$3,$4,$5) 
          ON CONFLICT(device_id,command_type) 
-         DO UPDATE SET desired_state=EXCLUDED.desired_state, desired_sequence=EXCLUDED.desired_sequence 
+         DO UPDATE SET desired_state=EXCLUDED.desired_state, desired_sequence=EXCLUDED.desired_sequence, desired_level=EXCLUDED.desired_level 
          WHERE device_states.desired_sequence < EXCLUDED.desired_sequence`,
-        [d.id, b.command_type, b.action, c.sequence]
+        [d.id, b.command_type, b.action, c.sequence, level]
       );
 
       return { created: true, command: c };
@@ -211,7 +213,7 @@ export class CommandsService {
       }
 
       if (c.ack_payload) {
-        if (c.ack_payload.status !== b.status) throw new ConflictException('ACK mới mâu thuẫn ACK đã lưu.');
+        if (c.ack_payload.status !== b.status || (b.status === 'SUCCESS' && (c.ack_payload.actual_state?.[c.command_type] !== b.actual_state?.[c.command_type] || (c.ack_payload.actual_levels?.[c.command_type] ?? null) !== (b.actual_levels?.[c.command_type] ?? null)))) throw new ConflictException('ACK mới mâu thuẫn ACK đã lưu.');
         return { ok: true, duplicate: true, command_id: c.id, status: c.status };
       }
 
@@ -232,6 +234,9 @@ export class CommandsService {
         throw new BadRequestException('ACK SUCCESS phải có actual_state khớp action của command.');
       }
 
+      const actualLevel = b.status === 'SUCCESS' ? actuatorLevel(c.command_type,c.action,b.actual_levels?.[c.command_type]) : null;
+      if (b.status === 'SUCCESS' && c.level !== null && c.level !== undefined && actualLevel !== c.level)
+        throw new BadRequestException('ACK SUCCESS phải có actual_levels khớp level của command.');
       const status = b.status === 'SUCCESS' ? 'ACK' : 'FAILED';
       await q.query(`UPDATE device_commands SET status=$2, acknowledged_at=now(), ack_payload=$3::jsonb WHERE id=$1`, [
         c.id,
@@ -242,9 +247,9 @@ export class CommandsService {
       if (status === 'ACK') {
         await q.query(
           `UPDATE device_states 
-           SET actual_state=$3, actual_sequence=$4, confirmed_at=now() 
+           SET actual_state=$3, actual_sequence=$4, actual_level=$5, confirmed_at=now() 
            WHERE device_id=$1 AND command_type=$2 AND actual_sequence < $4`,
-          [d.id, c.command_type, c.action, c.sequence]
+          [d.id, c.command_type, c.action, c.sequence, actualLevel]
         );
       }
 
@@ -272,9 +277,14 @@ export class CommandsService {
   }
 
   async manual(b: ManualDto) {
-    await this.devices.resolve(b.device_id);
+    actuatorLevel(b.command_type,b.action,b.level);
+    const d = await this.devices.resolve(b.device_id);
     const url = process.env.N8N_AUTOMATION_WEBHOOK_URL;
     if (!url) throw new ServiceUnavailableException('Chưa cấu hình webhook flow 03. Yêu cầu thủ công chưa được gửi.');
+    const requestId = randomUUID();
+    // Preserve intent: an older WF03 must not silently strip level and execute ON at full power.
+    if (b.level != null) await this.db.query(`INSERT INTO device_events(id,device_id,event_type,payload)
+      VALUES($1,$2,'MANUAL_LEVEL_REQUESTED',$3::jsonb)`, [requestId,d.id,JSON.stringify(b)]);
     try {
       const r = await fetch(url, {
         method: 'POST',
@@ -282,7 +292,7 @@ export class CommandsService {
           'content-type': 'application/json',
           ...(process.env.N8N_TOKEN ? { authorization: 'Bearer ' + process.env.N8N_TOKEN } : {})
         },
-        body: JSON.stringify({ ...b, request_id: randomUUID(), source: 'MANUAL' }),
+        body: JSON.stringify({ ...b, request_id: requestId, source: 'MANUAL' }),
         signal: AbortSignal.timeout(7000),
         redirect: 'error'
       });

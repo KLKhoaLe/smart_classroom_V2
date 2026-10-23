@@ -7,7 +7,7 @@ const {CommandsService}=require('../dist/modules/commands.service');
 function wrap(pg){return {query:async(sql,args)=>{if(args===undefined)return (await pg.exec(sql)).at(-1)?.rows||[];const r=await pg.query(sql,args);return /^\s*(UPDATE|DELETE)\b/i.test(sql)?[r.rows,r.affectedRows??0]:r.rows;},transaction:fn=>pg.transaction(tx=>fn(wrap(tx)))}}
 test('Return AUTO cancels unsent manual, retains actual/SENT and rejects stale release',async()=>{
  const pg=new PGlite(),db=wrap(pg);try{
- await new InitialSchema1792200000000().up(db);await seed(db);
+ await new InitialSchema1792200000000().up(db);await new (require('../dist/database/migrations/1792700000000-ActuatorLevels').ActuatorLevels1792700000000)().up(db);await seed(db);
  const devices=new DeviceService(db),commands=new CommandsService(db,devices),device='ESP32_A101';
  const hold=await devices.setOverride({device_id:device,command_type:'FAN',action:'ON',override_minutes:5});
  const c=(await commands.create({device_id:device,command_type:'FAN',action:'ON',source:'MANUAL',idempotency_key:'release'})).command;

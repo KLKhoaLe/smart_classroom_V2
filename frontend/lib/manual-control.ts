@@ -8,6 +8,7 @@ export type ManualOverride = {
   device_id: string;
   command_type: Actuator;
   action: ManualAction;
+  level?: number | null;
   expires_at: string;
 };
 
@@ -45,12 +46,16 @@ export function overrideMode(override: ManualOverride | undefined, now: number, 
   return { kind: 'auto', label: 'AUTO được phép', remaining: 0 } as const;
 }
 
-export function manualPayload(deviceId: string, commandType: string, action: string, minutes: number) {
+export function manualPayload(deviceId: string, commandType: string, action: string, minutes: number, level?: number) {
   if (!deviceId || !ACTUATORS.includes(commandType as Actuator) || !['ON', 'OFF'].includes(action)
     || !Number.isInteger(minutes) || minutes < 1 || minutes > 120) {
     throw new Error('Thiết bị, hành động hoặc thời gian giữ không hợp lệ (1–120 phút).');
   }
-  return { device_id: deviceId, command_type: commandType, action, override_minutes: minutes };
+  if (level !== undefined) {
+    const max = commandType === 'FAN' ? 3 : commandType === 'LIGHT' ? 100 : 0;
+    if (!max || !Number.isInteger(level) || level < 0 || level > max || (action === 'OFF' ? level !== 0 : level === 0)) throw new Error('Mức quạt/đèn không hợp lệ.');
+  }
+  return { device_id: deviceId, command_type: commandType, action, override_minutes: minutes, ...(level !== undefined ? {level} : {}) };
 }
 
 // API này chỉ xác nhận webhook nhận yêu cầu. Actual vẫn phải đọc từ dashboard/ACK.

@@ -3,7 +3,7 @@ import { defaults, initialSensors, initialDevices, scenarios, validateConfig } f
 export class Simulator {
  constructor({config=defaults(), persist=()=>{}, fetcher=fetch, clock=Date.now}={}) {
   this.config=validateConfig(config,defaults());this.persist=persist;this.fetcher=fetcher;this.clock=clock;
-  this.status='stopped';this.runId=randomUUID();this.sequence=0;this.logs=[];this.history=[];this.devices=initialDevices();
+  this.status='stopped';this.runId=randomUUID();this.sequence=0;this.logs=[];this.history=[];this.devices=initialDevices();this.levels={FAN:0,LIGHT:0};
   this.commands=new Map();this.deviceSequences={};this.pendingAcks=new Map();this.inflight=new Set();this.counters={generated:0,sent:0,errors:0,commands:0,acks:0};
   this.lastPayload=null;this.lastHeartbeat=0;this.lastTelemetry=0;this.lastPoll=0;this.startedAt=clock();this.scenario='custom';this.timelineStart=null;this.timelineStep=-1;this.closing=false;
  }
@@ -13,7 +13,7 @@ export class Simulator {
   if(this.status!=='stopped'&&['device_id','device_code','room_code'].some(k=>k in patch&&patch[k]!==this.config[k]))throw new Error('Dừng phiên trước khi đổi phòng hoặc thiết bị.');
   const identityChanged=['device_id','device_code','room_code'].some(k=>k in patch&&patch[k]!==this.config[k]);
   const next=validateConfig(patch,this.config);this.persist(next);this.config=next;
-  if(identityChanged){this.devices=initialDevices();this.deviceSequences={};this.commands.clear();this.pendingAcks.clear();this.runId=randomUUID();this.sequence=0;this.lastPayload=null;}
+  if(identityChanged){this.devices=initialDevices();this.levels={FAN:0,LIGHT:0};this.deviceSequences={};this.commands.clear();this.pendingAcks.clear();this.runId=randomUUID();this.sequence=0;this.lastPayload=null;}
   if(patch.sensors){this.scenario='custom';this.timelineStart=null;}
   this.log('info','Đã cập nhật cấu hình.');return this.snapshot();
  }
@@ -77,7 +77,7 @@ export class Simulator {
   if(!c||typeof c!=='object'||typeof c.command_id!=='string'||!c.command_id||c.command_id.length>150)throw new Error('Thiếu command_id hợp lệ.');
   const allowed=[this.config.device_code,this.config.device_id].filter(Boolean);
   if(!allowed.includes(c.device_id)&&!allowed.includes(c.device_code))throw new Error('Lệnh không dành cho thiết bị đang mô phỏng.');
-  const fingerprint=JSON.stringify([c.device_id,c.device_code,c.command_type,c.action,c.sequence,c.expires_at]);
+  const fingerprint=JSON.stringify([c.device_id,c.device_code,c.command_type,c.action,c.level??null,c.sequence,c.expires_at]);
   if(this.commands.has(c.command_id)) {
    const old=this.commands.get(c.command_id);if(old.fingerprint!==fingerprint)throw new Error('command_id đã tồn tại nhưng nội dung khác.');
    this.log('info','Lệnh trùng: không thực thi lại, gửi lại ACK đã lưu.');await this.deliverAck(old.ack);return {...old.ack,duplicate:true};
@@ -85,14 +85,15 @@ export class Simulator {
   let reason='';const type=c.command_type;
   if(!Object.hasOwn(this.devices,type))reason='command_type không được hỗ trợ';
   else if(!['ON','OFF'].includes(c.action))reason='action phải là ON hoặc OFF';
+  else if(c.level!=null&&(!['FAN','LIGHT'].includes(type)||!Number.isInteger(c.level)||c.level<0||c.level>(type==='FAN'?3:100)||(c.action==='OFF'?c.level!==0:c.level===0)))reason='level không hợp lệ';
   else if(c.expires_at&&(!Number.isFinite(Date.parse(c.expires_at))||Date.parse(c.expires_at)<=this.clock()))reason='Lệnh hết hạn hoặc expires_at sai';
   else if(c.sequence!==undefined&&(!Number.isSafeInteger(c.sequence)||c.sequence<0))reason='sequence không hợp lệ';
   else if(c.sequence!==undefined&&c.sequence<=(this.deviceSequences[type]??-1))reason='Lệnh cũ: sequence không lớn hơn lệnh đã thực thi';
   else if(this.config.faults.fail_command)reason='Thiết bị giả lập lỗi thực thi';
-  if(!reason){this.devices[type]=c.action;if(c.sequence!==undefined)this.deviceSequences[type]=c.sequence;}
+  if(!reason){this.devices[type]=c.action;if(type==='FAN'||type==='LIGHT')this.levels[type]=c.level??(c.action==='OFF'?0:(type==='FAN'?3:100));if(c.sequence!==undefined)this.deviceSequences[type]=c.sequence;}
   const ack={command_id:c.command_id,device_id:c.device_id||this.config.device_id||this.config.device_code,device_code:this.config.device_code,
    status:reason?'FAILED':'SUCCESS',result:reason?'FAILED':'SUCCESS',message:reason||`${type} set to ${c.action}`,command_type:type,
-   actual_state:{...this.devices},fan_state:this.devices.FAN,light_state:this.devices.LIGHT,sequence:c.sequence??null,observed_at:new Date(this.clock()).toISOString(),simulated:true};
+   actual_state:{...this.devices},actual_levels:{...this.levels},fan_state:this.devices.FAN,light_state:this.devices.LIGHT,sequence:c.sequence??null,observed_at:new Date(this.clock()).toISOString(),simulated:true};
   // Cache before first await, so concurrent deliveries cannot execute twice.
   this.commands.set(c.command_id,{fingerprint,ack});if(this.commands.size>1000)this.commands.delete(this.commands.keys().next().value);
   this.counters.commands++;this.log(reason?'error':'command',reason||`${type} → ${c.action}`,ack);await this.deliverAck(ack);return ack;
@@ -123,5 +124,5 @@ export class Simulator {
   }
   if(this.pendingAcks.size)void this.flushAcks();
  }
- snapshot(){return {config:this.config,status:this.status,run_id:this.runId,sequence:this.sequence,devices:this.devices,counters:this.counters,logs:this.logs,history:this.history,last_payload:this.lastPayload,scenario:this.scenario,pending_acks:this.pendingAcks.size,busy:[...this.inflight],scenarios};}
+ snapshot(){return {config:this.config,status:this.status,run_id:this.runId,sequence:this.sequence,devices:this.devices,levels:this.levels,counters:this.counters,logs:this.logs,history:this.history,last_payload:this.lastPayload,scenario:this.scenario,pending_acks:this.pendingAcks.size,busy:[...this.inflight],scenarios};}
 }

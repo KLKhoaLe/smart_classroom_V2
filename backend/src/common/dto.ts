@@ -42,6 +42,7 @@ export class TelemetryDto extends DeviceDto {
 }
 
 export class CommandDto extends DeviceDto {
+  @ApiProperty({required:false}) @IsOptional() @IsInt() @Min(0) @Max(100) level?: number;
   @ApiProperty({ enum: TYPES }) @IsIn(TYPES) command_type!: string;
   @ApiProperty({ enum: ['ON', 'OFF'] }) @IsIn(['ON', 'OFF']) action!: string;
   @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(180) idempotency_key!: string;
@@ -51,12 +52,14 @@ export class CommandDto extends DeviceDto {
 }
 
 export class ManualDto extends DeviceDto {
+  @ApiProperty({required:false}) @IsOptional() @IsInt() @Min(0) @Max(100) level?: number;
   @ApiProperty({ enum: TYPES }) @IsIn(TYPES) command_type!: string;
   @ApiProperty({ enum: ['ON', 'OFF'] }) @IsIn(['ON', 'OFF']) action!: string;
   @ApiProperty() @IsInt() @Min(1) @Max(120) override_minutes!: number;
 }
 
 export class AckDto extends DeviceDto {
+  @ApiProperty({required:false}) @IsOptional() @IsObject() actual_levels?: Record<string, number>;
   @ApiProperty() @IsUUID() command_id!: string;
   @ApiProperty({ enum: ['SUCCESS', 'FAILED'] }) @IsIn(['SUCCESS', 'FAILED']) status!: string;
   @ApiProperty({ required: false }) @IsOptional() @IsObject() actual_state?: Record<string, string>;
@@ -165,6 +168,7 @@ export class ClearOverrideDto {
 }
 
 export class OverrideDto extends DeviceDto {
+  @ApiProperty({required:false}) @IsOptional() @IsInt() @Min(0) @Max(100) level?: number;
   @ApiProperty({ enum: TYPES })
   @IsIn(TYPES)
   command_type!: string;
