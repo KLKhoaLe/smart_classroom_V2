@@ -1,51 +1,204 @@
 {
-  "name": "10_INCIDENT_MANAGEMENT",
+  "name": "10_INCIDENT_MANAGEMENT_V3",
   "nodes": [
     {
-      "parameters": {"httpMethod": "POST", "path": "incident-candidate", "responseMode": "lastNode", "options": {}},
-      "id": "8a5cccd7-6ab4-457e-b19e-60fca4c0ee10",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "incident-candidate",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "571e08b9-d78b-4e16-b5e9-0a690cb93ace",
       "name": "Incident Candidate Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-600, 0],
-      "webhookId": "711e12ec-22ab-4d5b-9ba8-923c4afdeb10"
+      "position": [
+        -720,
+        112
+      ],
+      "webhookId": "incident-candidate-v3"
     },
     {
       "parameters": {
-        "mode": "runOnceForEachItem",
-        "jsCode": "const x=$json.body??$json;\nconst aliases={HOT:'HIGH_TEMPERATURE',TEMPERATURE:'HIGH_TEMPERATURE',HUMIDITY:'HIGH_HUMIDITY',CO2:'HIGH_CO2',CO2_HIGH:'HIGH_CO2',POWER_WASTE:'ENERGY_WASTE',DOOR_AFTER_HOURS:'AFTER_HOURS_DOOR',OFFLINE:'DEVICE_OFFLINE',INVALID_TELEMETRY:'INVALID_PAYLOAD'};\nconst type=String(x.type||'CUSTOM').trim().toUpperCase().replace(/[\\s-]+/g,'_');\nconst raw=String(x.severity||'WARNING').trim().toUpperCase();\nconst severity=({LOW:'INFO',MINOR:'INFO',MEDIUM:'WARNING',HIGH:'CRITICAL',SEVERE:'CRITICAL'})[raw]||raw;\nif(!['INFO','WARNING','CRITICAL'].includes(severity)) throw new Error('Unsupported incident severity: '+severity);\nreturn {json:{device_id:x.device_id,room:x.room,type:aliases[type]||type,severity,title:String(x.title||type).slice(0,250),observed_at:x.observed_at,details:x.details||{source_workflow:x.source_workflow||'WF05-WF09'}}};"
+        "jsCode": "const input = $input.first().json;\nconst body = input.body ?? input;\nconst isObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);\ntry {\n  if (!isObject(body)) throw new Error('Body phải là JSON object.');\n  const x = isObject(body.incident_candidate) ? body.incident_candidate : body;\n  const aliases = {\n    HOT: 'HIGH_TEMPERATURE', TEMPERATURE: 'HIGH_TEMPERATURE',\n    HUMIDITY: 'HIGH_HUMIDITY', CO2: 'HIGH_CO2', CO2_HIGH: 'HIGH_CO2',\n    POWER_WASTE: 'ENERGY_WASTE', DOOR_AFTER_HOURS: 'AFTER_HOURS_DOOR',\n    OFFLINE: 'DEVICE_OFFLINE', INVALID_TELEMETRY: 'INVALID_PAYLOAD',\n    COMMAND_FAILED: 'COMMAND_FAILURE', COMMAND_TIMEOUT: 'COMMAND_FAILURE',\n    LATE_ACK: 'COMMAND_FAILURE'\n  };\n  const rawType = String(x.type || '').trim().toUpperCase().replace(/[\\s-]+/g, '_');\n  const type = aliases[rawType] || rawType;\n  const types = ['SENSOR_ANOMALY', 'HIGH_TEMPERATURE', 'HIGH_HUMIDITY', 'HIGH_CO2', 'ENERGY_WASTE', 'AFTER_HOURS_DOOR', 'DEVICE_OFFLINE', 'COMMAND_FAILURE', 'INVALID_PAYLOAD', 'CUSTOM'];\n  if (!types.includes(type)) throw new Error('Loại sự cố không hợp lệ: ' + type);\n  const rawSeverity = String(x.severity || 'WARNING').trim().toUpperCase();\n  const severity = ({LOW: 'INFO', MINOR: 'INFO', MEDIUM: 'WARNING', HIGH: 'CRITICAL', SEVERE: 'CRITICAL'})[rawSeverity] || rawSeverity;\n  if (!['INFO', 'WARNING', 'CRITICAL'].includes(severity)) throw new Error('Severity không hợp lệ.');\n  function requiredText(value, name, max) {\n    if (typeof value !== 'string' || !value.trim() || value.trim().length > max) throw new Error(name + ' phải là chuỗi không rỗng, tối đa ' + max + ' ký tự.');\n    return value.trim();\n  }\n  const event_key = requiredText(x.event_key, 'event_key', 250);\n  const dedup_key = requiredText(x.dedup_key, 'dedup_key', 180);\n  const device = x.device_id ?? x.device_code;\n  const room = x.room ?? x.room_code;\n  if (!device && !room) throw new Error('Cần device_id hoặc room.');\n  if (x.recovered !== undefined && typeof x.recovered !== 'boolean') throw new Error('recovered phải là boolean.');\n  const observed_at = x.observed_at;\n  if (typeof observed_at !== 'string' || !/^\\d{4}-\\d\\d-\\d\\dT.*(?:Z|[+-]\\d\\d:\\d\\d)$/.test(observed_at) || !Number.isFinite(Date.parse(observed_at))) throw new Error('observed_at phải là ISO timestamp có múi giờ.');\n  if (Date.parse(observed_at) > Date.now() + 60000) throw new Error('observed_at vượt quá 60 giây trong tương lai.');\n  const details = x.details ?? x.evidence ?? {};\n  if (!isObject(details)) throw new Error('details/evidence phải là object.');\n  const payload = {\n    type, severity,\n    title: requiredText(x.title ?? x.reason ?? type, 'title', 250),\n    event_key, dedup_key,\n    recovered: x.recovered === true,\n    observed_at: new Date(observed_at).toISOString(),\n    details\n  };\n  if (device) payload.device_id = requiredText(device, 'device_id', 100);\n  if (room) payload.room = requiredText(room, 'room', 100);\n  return [{json: {valid: true, payload}}];\n} catch (error) {\n  return [{json: {\n    valid: false,\n    http_status: 400,\n    response_body: {\n      workflow_version: 'V3',\n      ok: false,\n      error_type: 'INVALID_CANDIDATE',\n      message: error.message\n    }\n  }}];\n}"
       },
-      "id": "4dfd8129-017d-4380-97f4-c361d9e2a010",
+      "id": "ac5e0af5-dd39-4a55-b71b-6c0ad9e8ccc5",
       "name": "Normalize Candidate",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-360, 0]
+      "position": [
+        -480,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "candidate-valid",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "933f2636-b390-49d4-8d65-3b78cc7e0bb0",
+      "name": "Candidate Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        112
+      ]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "http://host.docker.internal:3001/api/incidents",
-        "sendHeaders": true,
-        "headerParameters": {"parameters": [{"name": "Content-Type", "value": "application/json"}]},
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json) }}",
-        "options": {"timeout": 10000}
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 10000
+        }
       },
-      "id": "0f474db8-b52e-4a8d-b87b-804d82dc1010",
+      "id": "7bddd8f3-65a4-44f7-8cf3-1493d7dcbc04",
       "name": "Upsert Incident and Notify",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-100, 0]
+      "position": [
+        0,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst candidate = $('Normalize Candidate').first().json.payload;\nfunction fail(code, type, message) {\n  return [{json: {\n    http_status: code,\n    response_body: {\n      workflow_version: 'V3',\n      ok: false,\n      event_key: candidate.event_key,\n      error_type: type,\n      message\n    }\n  }}];\n}\nif (response.error || !Number.isInteger(response.statusCode)) return fail(503, 'BACKEND_UNAVAILABLE', 'Chưa xác nhận được kết quả lưu sự kiện. Khi thử lại, giữ nguyên event_key và nội dung.');\nlet result = response.body;\nif (typeof result === 'string') {\n  try { result = JSON.parse(result); } catch { result = null; }\n}\nif (response.statusCode < 200 || response.statusCode >= 300) {\n  const code = response.statusCode >= 400 && response.statusCode <= 599 ? response.statusCode : 502;\n  const message = Array.isArray(result?.message) ? result.message.join(' | ') : typeof result?.message === 'string' ? result.message : 'Backend từ chối sự kiện.';\n  return fail(code, 'BACKEND_REJECTED', message);\n}\nconst actions = ['OPENED', 'UPDATED', 'RESOLVED', 'IGNORED_STALE', 'NO_OPEN_INCIDENT'];\nif (result?.ok !== true || result.event_key !== candidate.event_key || !actions.includes(result.event_action)) return fail(502, 'INVALID_BACKEND_RESPONSE', 'Backend response không đúng contract incidents V3.');\nif (['OPENED', 'UPDATED', 'RESOLVED'].includes(result.event_action) && !result.incident_id) return fail(502, 'INVALID_BACKEND_RESPONSE', 'Backend thiếu incident_id.');\nreturn [{json: {\n  http_status: 200,\n  response_body: {\n    ...result,\n    workflow_version: 'V3',\n    processed_by: 'WF10',\n    message: result.event_duplicate === true\n      ? 'Sự kiện đã được xử lý trước đó. Đây là kết quả đã lưu, không phải truy vấn trạng thái sự cố mới nhất.'\n      : 'Backend đã xử lý sự kiện. Xem event_action để biết kết quả.'\n  }\n}}];"
+      },
+      "id": "ef887580-5466-46da-8248-f802239900e2",
+      "name": "Check Backend Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.response_body) }}",
+        "options": {
+          "responseCode": "={{ $json.http_status }}"
+        }
+      },
+      "id": "0addb476-f66b-4aff-81c3-d4c064864819",
+      "name": "Respond Incident Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        480,
+        112
+      ]
     }
   ],
+  "pinData": {},
   "connections": {
-    "Incident Candidate Webhook": {"main": [[{"node": "Normalize Candidate", "type": "main", "index": 0}]]},
-    "Normalize Candidate": {"main": [[{"node": "Upsert Incident and Notify", "type": "main", "index": 0}]]}
+    "Incident Candidate Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Candidate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Candidate": {
+      "main": [
+        [
+          {
+            "node": "Candidate Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Candidate Valid?": {
+      "main": [
+        [
+          {
+            "node": "Upsert Incident and Notify",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Incident Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Incident and Notify": {
+      "main": [
+        [
+          {
+            "node": "Check Backend Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Backend Result": {
+      "main": [
+        [
+          {
+            "node": "Respond Incident Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "active": false,
-  "settings": {"executionOrder": "v1", "timezone": "Asia/Ho_Chi_Minh"},
-  "versionId": "46f82d6f-1705-45da-95e7-4cc1941dbe10",
-  "meta": {"templateCredsSetupCompleted": false},
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "4750b405-4b49-4337-970d-f4ed6d9be722",
+  "meta": {
+    "instanceId": "74397114e206792390d2318630c9cb2cd8c3ad6e9328254d2194767fe90a0e8d"
+  },
+  "nodeGroups": [],
+  "id": "JPUX6E29MLlkZfkR",
   "tags": []
 }

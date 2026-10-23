@@ -1,20 +1,93 @@
 {
-  "name": "06 Device Health",
+  "name": "06_DEVICE_HEALTH_V3",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
         "path": "flow06-heartbeat",
-        "options": {
-          "responseMode": "lastNode"
-        }
+        "responseMode": "responseNode",
+        "options": {}
       },
-      "id": "wh-heartbeat",
+      "id": "2d813f30-d2f6-4968-832e-a444f88f2913",
       "name": "Webhook Heartbeat",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [240, 200],
+      "position": [
+        0,
+        0
+      ],
       "webhookId": "flow06-heartbeat"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst body = input.body ?? input;\nif (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Heartbeat phải là JSON object.');\nif (typeof body.device_id !== 'string' || !body.device_id.trim()) throw new Error('Thiếu device_id.');\nreturn [{json: {\n  device_id: body.device_id,\n  received_at: new Date().toISOString()\n}}];"
+      },
+      "id": "02bf3480-6e0a-40be-ae10-56af88feeff0",
+      "name": "Parse Heartbeat",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3001/api/devices/heartbeat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ device_id: $json.device_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 4000
+        }
+      },
+      "id": "ab43759c-e52e-43aa-9f16-4ee7533aa284",
+      "name": "POST Heartbeat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst input = $('Parse Heartbeat').first().json;\nconst base = {workflow_version: 'V3', branch: 'heartbeat', received_at: input.received_at};\nfunction fail(code, message) {\n  return [{json: {...base, success: false, ok: false, http_status: code, device_id: input.device_id, error: message}}];\n}\nif (response.error || !Number.isInteger(response.statusCode)) return fail(503, 'Không nhận được phản hồi hợp lệ từ backend.');\nlet result = response.body;\nif (typeof result === 'string') {\n  try { result = JSON.parse(result); } catch { result = null; }\n}\nif (response.statusCode < 200 || response.statusCode >= 300) {\n  const code = response.statusCode >= 400 && response.statusCode <= 599 ? response.statusCode : 502;\n  const message = Array.isArray(result?.message) ? result.message.join(' | ') : typeof result?.message === 'string' ? result.message : 'Backend từ chối heartbeat.';\n  return fail(code, message);\n}\nif (result?.ok !== true || typeof result.device_id !== 'string' || !Number.isFinite(Date.parse(result.last_seen))) return fail(502, 'Backend response không đúng contract heartbeat.');\nif (input.device_id !== result.device_id && input.device_id !== result.device_code) return fail(502, 'Backend trả sai thiết bị.');\nreturn [{json: {\n  ...base,\n  success: true,\n  ok: true,\n  http_status: 200,\n  device_id: result.device_id,\n  device_code: result.device_code,\n  last_seen: result.last_seen,\n  message: 'Backend đã lưu heartbeat.'\n}}];"
+      },
+      "id": "9952a023-f6da-4265-998d-83391146c0dd",
+      "name": "Heartbeat Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": "={{ $json.http_status }}"
+        }
+      },
+      "id": "3bd9cc2a-c35c-4bd8-a24f-95cd780905de",
+      "name": "Respond Heartbeat",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        880,
+        0
+      ]
     },
     {
       "parameters": {
@@ -27,110 +100,95 @@
           ]
         }
       },
-      "id": "schedule-check",
+      "id": "60c78d09-a7a5-44c1-a7df-dff17ac4332e",
       "name": "Schedule Check (15s)",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [240, 520]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Normalize heartbeat payload from webhook\nconst input = $input.first().json;\nconst body = input.body ?? input;\n\nconst device_id = body.device_id;\nif (!device_id) {\n  throw new Error('Missing device_id in heartbeat payload');\n}\n\nreturn [{\n  json: {\n    device_id: device_id,\n    device_code: body.device_code ?? undefined,\n    received_at: new Date().toISOString()\n  }\n}];"
-      },
-      "id": "parse-heartbeat",
-      "name": "Parse Heartbeat",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [460, 200]
+      "position": [
+        0,
+        320
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.BACKEND_URL}}/api/devices/heartbeat",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ device_id: $json.device_id }) }}",
+        "url": "http://host.docker.internal:3001/api/devices/check-offline",
         "options": {
-          "timeout": 10000
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 4000
         }
       },
-      "id": "post-heartbeat",
-      "name": "POST Heartbeat",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [680, 200],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "backend-token",
-          "name": "Backend API Token"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const result = $input.first().json;\nreturn [{\n  json: {\n    success: true,\n    branch: 'heartbeat',\n    device_id: result.device_id,\n    last_seen: result.last_seen,\n    message: 'Heartbeat recorded successfully',\n    processed_at: new Date().toISOString()\n  }\n}];"
-      },
-      "id": "heartbeat-ok",
-      "name": "Heartbeat OK",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [900, 200]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{$env.BACKEND_URL}}/api/devices/check-offline",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "options": {
-          "timeout": 10000
-        }
-      },
-      "id": "check-offline",
+      "id": "931ba70c-3ef3-497c-a8d4-53d65a3ac32f",
       "name": "POST Check Offline",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [460, 420],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "backend-token",
-          "name": "Backend API Token"
-        }
-      }
+      "position": [
+        224,
+        320
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.BACKEND_URL}}/api/commands/expire",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "url": "http://host.docker.internal:3001/api/commands/expire",
         "options": {
-          "timeout": 10000
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 4000
         }
       },
-      "id": "expire-commands",
+      "id": "b700f2a1-6d8f-49d0-ac3d-202818f36469",
       "name": "POST Expire Commands",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [460, 620],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "backend-token",
-          "name": "Backend API Token"
-        }
-      }
+      "position": [
+        448,
+        320
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Process offline devices from check-offline response\nconst offlineDevices = $('POST Check Offline').first().json;\nconst expireResult = $('POST Expire Commands').first().json;\n\n// offlineDevices is an array of devices past heartbeat threshold\nconst devices = Array.isArray(offlineDevices) ? offlineDevices : [];\nconst expired = expireResult.expired ?? 0;\nconst expiredCommands = expireResult.commands ?? [];\n\n// Build incident candidates for offline devices\nconst incidents = devices.map(d => ({\n  incident_candidate: true,\n  type: 'DEVICE_OFFLINE',\n  severity: 'HIGH',\n  dedup_key: 'offline-' + (d.device_id ?? d.id),\n  room: 'A101',\n  device_id: d.device_id ?? d.id,\n  device_code: d.code ?? d.device_code,\n  evidence: {\n    last_seen: d.last_seen,\n    threshold_seconds: 90,\n    detected_at: new Date().toISOString()\n  },\n  recovered: false,\n  source: 'WF06'\n}));\n\n// Build incident candidates for timed out commands\nconst timeoutIncidents = expiredCommands.map(c => ({\n  incident_candidate: true,\n  type: 'COMMAND_TIMEOUT',\n  severity: 'MEDIUM',\n  dedup_key: 'timeout-' + (c.command_id ?? c.id),\n  room: 'A101',\n  device_id: c.device_id,\n  command_id: c.command_id ?? c.id,\n  evidence: {\n    previous_status: 'PENDING/QUEUED/SENT',\n    new_status: 'TIMED_OUT',\n    detected_at: new Date().toISOString()\n  },\n  recovered: false,\n  source: 'WF06'\n}));\n\nreturn [{\n  json: {\n    branch: 'scheduled_check',\n    offline_count: devices.length,\n    offline_devices: devices,\n    expired_count: expired,\n    expired_commands: expiredCommands,\n    incidents: [...incidents, ...timeoutIncidents],\n    has_incidents: incidents.length > 0 || timeoutIncidents.length > 0,\n    checked_at: new Date().toISOString()\n  }\n}];"
+        "url": "http://host.docker.internal:3001/api/devices",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 4000
+        }
       },
-      "id": "process-health",
+      "id": "90e0695e-f47e-4fdc-8208-6e30d238dd42",
+      "name": "GET All Devices",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function body(name) {\n  const response = $(name).first().json;\n  if (!Number.isInteger(response.statusCode) || response.statusCode < 200 || response.statusCode >= 300) throw new Error(name + ': backend response không thành công.');\n  return response.body;\n}\nconst offlineAtCheck = body('POST Check Offline');\nconst expireResult = body('POST Expire Commands');\nconst allDevices = body('GET All Devices');\nif (!Array.isArray(offlineAtCheck)) throw new Error('Check Offline phải trả mảng trong body.');\nif (!Array.isArray(allDevices)) throw new Error('GET All Devices phải trả mảng trong body.');\nif (!expireResult || !Number.isInteger(expireResult.expired) || expireResult.expired < 0 || !Array.isArray(expireResult.commands) || expireResult.expired !== expireResult.commands.length) throw new Error('Response expire không hợp lệ.');\nconst checked_at = new Date().toISOString();\nconst enabled = allDevices.filter(d => d.enabled === true);\nconst byId = new Map(allDevices.map(d => [d.id, d]));\nconst online = enabled.filter(d => d.online === true);\nconst offline = enabled.filter(d => d.online === false);\nconst incidents = [];\nfor (const d of offline) {\n  incidents.push({\n    incident_candidate: true,\n    type: 'DEVICE_OFFLINE',\n    severity: 'HIGH',\n    title: 'Thiết bị mất kết nối: ' + d.code,\n    source: 'WF06',\n    event_key: 'WF06:OFFLINE:' + d.id + ':' + (d.last_seen ?? 'NEVER_SEEN'),\n    dedup_key: 'offline-' + d.id,\n    device_id: d.id,\n    device_code: d.code,\n    room: d.room_code,\n    observed_at: checked_at,\n    recovered: false,\n    details: {\n      last_seen: d.last_seen,\n      threshold_seconds: 90,\n      detected_at: checked_at\n    }\n  });\n}\nfor (const c of expireResult.commands) {\n  const id = c.command_id ?? c.id;\n  if (!id || !c.device_id) throw new Error('Expired command thiếu ID.');\n  const d = byId.get(c.device_id);\n  incidents.push({\n    incident_candidate: true,\n    type: 'COMMAND_FAILURE',\n    severity: 'MEDIUM',\n    title: 'Lệnh hết hạn trước khi được xác nhận',\n    source: 'WF06',\n    event_key: 'WF06:COMMAND_TIMEOUT:' + id,\n    dedup_key: 'timeout-' + id,\n    device_id: c.device_id,\n    device_code: d?.code ?? null,\n    room: d?.room_code ?? null,\n    command_id: id,\n    observed_at: checked_at,\n    recovered: false,\n    details: {\n      event_type: 'COMMAND_TIMEOUT',\n      command_id: id,\n      new_status: 'TIMED_OUT',\n      detected_at: checked_at\n    }\n  });\n}\nreturn [{json: {\n  workflow_version: 'V3',\n  success: true,\n  branch: 'scheduled_check',\n  threshold_seconds: 90,\n  total_enabled_devices: enabled.length,\n  online_count: online.length,\n  offline_count: offline.length,\n  offline_count_at_initial_check: offlineAtCheck.length,\n  online_devices: online.map(d => ({device_id: d.id, device_code: d.code, room: d.room_code, last_seen: d.last_seen})),\n  offline_devices: offline.map(d => ({device_id: d.id, device_code: d.code, room: d.room_code, last_seen: d.last_seen})),\n  expired_count: expireResult.expired,\n  expired_commands: expireResult.commands,\n  incidents,\n  has_incidents: incidents.length > 0,\n  incident_delivery: 'NOT_CONNECTED',\n  recovery_tracking: 'NOT_IMPLEMENTED',\n  checked_at\n}}];"
+      },
+      "id": "d2a5bbe5-376a-4172-8473-d558df2cab7d",
       "name": "Process Health Results",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [680, 520]
+      "position": [
+        880,
+        320
+      ]
     },
     {
       "parameters": {
@@ -138,80 +196,135 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "strict",
+            "version": 2
           },
           "conditions": [
             {
               "id": "has-incidents",
               "leftValue": "={{ $json.has_incidents }}",
-              "rightValue": true,
+              "rightValue": "",
               "operator": {
                 "type": "boolean",
-                "operation": "equals"
+                "operation": "true",
+                "singleValue": true
               }
             }
           ],
           "combinator": "and"
-        }
+        },
+        "options": {}
       },
-      "id": "has-issues",
+      "id": "feb44849-4224-4050-924e-de9c77672673",
       "name": "Has Issues?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [900, 520]
+      "position": [
+        1104,
+        320
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Output incident candidates for WF10\nconst data = $input.first().json;\nconst incidents = data.incidents ?? [];\n\nif (incidents.length === 0) {\n  return [{ json: { no_incidents: true } }];\n}\n\n// Return each incident as separate item for potential WF10 webhook calls\nreturn incidents.map(inc => ({ json: inc }));"
+        "jsCode": "const data = $input.first().json;\nconst devices = $('GET All Devices').first().json.body;\n\nif (!Array.isArray(devices)) {\n  throw new Error('GET All Devices không trả mảng trong body.');\n}\n\nreturn data.incidents.map(incident => {\n  const candidate = { ...incident };\n\n  if (candidate.type === 'DEVICE_OFFLINE') {\n    const device = devices.find(\n      d => d.id === candidate.device_id\n    );\n\n    if (!device) {\n      throw new Error('Không tìm thấy thiết bị của cảnh báo offline.');\n    }\n\n    // Giữ nguyên mốc sự kiện trong cùng một đợt offline.\n    const anchor = device.last_seen ?? device.created_at;\n    const anchorMs = Date.parse(anchor);\n\n    if (!Number.isFinite(anchorMs)) {\n      throw new Error('Thiết bị thiếu last_seen/created_at hợp lệ.');\n    }\n\n    const anchorIso = new Date(anchorMs).toISOString();\n\n    // Thiết bị từng kết nối: offline sau 90 giây.\n    // Thiết bị chưa từng kết nối: dùng thời điểm tạo thiết bị.\n    const observedAt = new Date(\n      anchorMs + (device.last_seen ? 90000 : 0)\n    ).toISOString();\n\n    candidate.event_key =\n      `WF06:OFFLINE:${device.id}:${anchorIso}`;\n\n    candidate.dedup_key = `offline-${device.id}`;\n    candidate.observed_at = observedAt;\n    candidate.recovered = false;\n\n    // Không đưa thời gian kiểm tra thay đổi mỗi lượt\n    // vào nội dung của cùng một sự kiện.\n    candidate.details = {\n      source: 'WF06',\n      last_seen: device.last_seen ?? null,\n      offline_since: observedAt,\n      threshold_seconds: 90\n    };\n  }\n\n  delete candidate.incident_delivery;\n  delete candidate.message;\n\n  return { json: candidate };\n});"
       },
-      "id": "emit-incidents",
-      "name": "Emit Incidents → WF10",
+      "id": "16c752ba-9140-4a0c-97c3-729ebe08a82c",
+      "name": "Incident Candidates - Not Sent",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 420]
+      "position": [
+        1328,
+        224
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const data = $input.first().json;\nreturn [{\n  json: {\n    success: true,\n    branch: 'scheduled_check',\n    offline_count: data.offline_count,\n    expired_count: data.expired_count,\n    has_incidents: false,\n    message: 'Health check passed, no issues detected',\n    checked_at: data.checked_at\n  }\n}];"
+        "jsCode": "const data = $input.first().json;\nreturn [{json: {\n  ...data,\n  message: 'Không có thiết bị đang bật bị offline trong snapshot cuối; lượt expire này không xử lý thêm lệnh hết hạn. Đây không phải kết luận về toàn bộ lịch sử sự cố.'\n}}];"
       },
-      "id": "no-issues",
-      "name": "All Healthy",
+      "id": "605adecc-e5ef-4ad1-b5a6-47d7cb0fc1a8",
+      "name": "No Issues This Check",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 620]
+      "position": [
+        1328,
+        432
+      ]
     },
     {
       "parameters": {
-        "url": "={{$env.BACKEND_URL}}/api/devices",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/incident-candidate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
         "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1632,
+        240
+      ],
+      "id": "cb82c218-ab4c-4016-86b2-e8267c771e60",
+      "name": "Send Incident to Flow 10"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map((item, index) => {\n  const result = item.json;\n\n  if (result.ok !== true || result.processed_by !== 'WF10') {\n    throw new Error('Flow 10 chưa xác nhận xử lý sự kiện.');\n  }\n\n  return {\n    json: {\n      workflow_version: 'V3',\n      incident_delivery: 'CONFIRMED',\n      incident_id: result.incident_id,\n      event_key: result.event_key,\n      event_action: result.event_action,\n      event_duplicate: result.event_duplicate,\n      status: result.status,\n      count: result.count\n    },\n    pairedItem: { item: index }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1856,
+        240
+      ],
+      "id": "6a567eec-f460-461e-96d3-2d8575ac6311",
+      "name": "Check Incident Delivery"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3001/api/incidents?type=DEVICE_OFFLINE",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          },
           "timeout": 10000
         }
       },
-      "id": "get-devices",
-      "name": "GET All Devices",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [680, 720],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "backend-token",
-          "name": "Backend API Token"
-        }
-      }
+      "typeVersion": 4.5,
+      "position": [
+        1152,
+        608
+      ],
+      "id": "c5b862d4-dbc1-4b46-bb70-dd28a0eb9710",
+      "name": "GET Offline Incidents"
     },
     {
       "parameters": {
-        "jsCode": "// Check for recovery: devices that were offline but are now online\nconst devices = $input.first().json;\nconst deviceList = Array.isArray(devices) ? devices : [];\nconst offlineDevices = $('POST Check Offline').first().json;\nconst offlineList = Array.isArray(offlineDevices) ? offlineDevices : [];\n\nconst offlineIds = new Set(offlineList.map(d => d.device_id ?? d.id));\n\n// Devices that are online (have recent last_seen)\nconst onlineDevices = deviceList.filter(d => d.online === true);\n\n// Recovery candidates: devices previously known offline that are now online\n// This would require state tracking; for now, log online status\nconst recoveryInfo = onlineDevices.map(d => ({\n  device_id: d.id,\n  device_code: d.code,\n  online: d.online,\n  last_seen: d.last_seen\n}));\n\nreturn [{\n  json: {\n    branch: 'recovery_check',\n    total_devices: deviceList.length,\n    online_count: onlineDevices.length,\n    offline_count: offlineList.length,\n    devices: recoveryInfo,\n    checked_at: new Date().toISOString()\n  }\n}];"
+        "jsCode": "const response = $input.first().json;\nconst incidents = response.body;\nconst health = $('Process Health Results').first().json;\n\nif (response.statusCode !== 200 || !Array.isArray(incidents)) {\n  throw new Error('Không lấy được danh sách sự cố.');\n}\n\nif (health.success !== true || !Array.isArray(health.online_devices)) {\n  throw new Error('Chưa có kết quả kiểm tra thiết bị hợp lệ.');\n}\n\nconst onlineDevices = new Map(\n  health.online_devices.map(device => [device.device_id, device])\n);\n\nconst results = [];\n\nfor (const incident of incidents) {\n  // Chỉ xử lý sự cố mất kết nối do WF06 tạo, chưa được đóng.\n  if (\n    incident.type !== 'DEVICE_OFFLINE' ||\n    incident.details?.source !== 'WF06' ||\n    incident.status === 'RESOLVED' ||\n    incident.resolved_at\n  ) {\n    continue;\n  }\n\n  const device = onlineDevices.get(incident.device_id);\n  if (!device) continue;\n\n  const lastSeenMs = Date.parse(device.last_seen);\n  const incidentMs = Date.parse(incident.last_seen);\n  const nowMs = Date.now();\n  const thresholdSeconds = Number(health.threshold_seconds);\n\n  if (\n    !Number.isFinite(lastSeenMs) ||\n    !Number.isFinite(incidentMs) ||\n    !Number.isFinite(thresholdSeconds) ||\n    thresholdSeconds <= 0\n  ) {\n    continue;\n  }\n\n  // Phải có tín hiệu mới sau sự cố và vẫn còn trong ngưỡng online.\n  if (\n    lastSeenMs <= incidentMs ||\n    lastSeenMs > nowMs ||\n    nowMs - lastSeenMs >= thresholdSeconds * 1000\n  ) {\n    continue;\n  }\n\n  const recoveredAt = new Date(lastSeenMs).toISOString();\n\n  results.push({\n    json: {\n      workflow_version: 'V3',\n      source: 'WF06',\n      type: 'DEVICE_OFFLINE',\n      severity: incident.severity,\n      title: incident.title,\n      device_id: incident.device_id,\n      device_code: device.device_code,\n      room: incident.room_code || device.room,\n\n      // Dùng khóa gốc để backend tìm đúng sự cố.\n      dedup_key: `offline-${incident.device_id}`,\n\n      // Gắn với sự cố và thời điểm tín hiệu phục hồi.\n      event_key:\n        `WF06:RECOVERED:${incident.id}:${recoveredAt}`,\n\n      recovered: true,\n      observed_at: recoveredAt,\n      details: {\n        source: 'WF06',\n        incident_id: incident.id,\n        last_seen: recoveredAt,\n        previous_offline_since:\n          incident.details.offline_since || incident.first_seen,\n        threshold_seconds: thresholdSeconds\n      }\n    }\n  });\n}\n\n// Không có sự cố cần đóng thì nhánh kết thúc tại đây.\nreturn results;"
       },
-      "id": "check-recovery",
-      "name": "Check Recovery",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 720]
+      "position": [
+        1376,
+        608
+      ],
+      "id": "f6a2cdee-e1e3-4623-8658-5d7d2b1ea69b",
+      "name": "Build Recovery Candidates"
     }
   ],
+  "pinData": {},
   "connections": {
     "Webhook Heartbeat": {
       "main": [
@@ -239,7 +352,18 @@
       "main": [
         [
           {
-            "node": "Heartbeat OK",
+            "node": "Heartbeat Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat Result": {
+      "main": [
+        [
+          {
+            "node": "Respond Heartbeat",
             "type": "main",
             "index": 0
           }
@@ -253,16 +377,6 @@
             "node": "POST Check Offline",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "POST Expire Commands",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "GET All Devices",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
@@ -271,7 +385,7 @@
       "main": [
         [
           {
-            "node": "Process Health Results",
+            "node": "POST Expire Commands",
             "type": "main",
             "index": 0
           }
@@ -279,6 +393,17 @@
       ]
     },
     "POST Expire Commands": {
+      "main": [
+        [
+          {
+            "node": "GET All Devices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET All Devices": {
       "main": [
         [
           {
@@ -296,6 +421,11 @@
             "node": "Has Issues?",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "GET Offline Incidents",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -304,25 +434,58 @@
       "main": [
         [
           {
-            "node": "Emit Incidents → WF10",
+            "node": "Incident Candidates - Not Sent",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "All Healthy",
+            "node": "No Issues This Check",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "GET All Devices": {
+    "Incident Candidates - Not Sent": {
       "main": [
         [
           {
-            "node": "Check Recovery",
+            "node": "Send Incident to Flow 10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Incident to Flow 10": {
+      "main": [
+        [
+          {
+            "node": "Check Incident Delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET Offline Incidents": {
+      "main": [
+        [
+          {
+            "node": "Build Recovery Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Recovery Candidates": {
+      "main": [
+        [
+          {
+            "node": "Send Incident to Flow 10",
             "type": "main",
             "index": 0
           }
@@ -330,23 +493,16 @@
       ]
     }
   },
+  "active": true,
   "settings": {
     "executionOrder": "v1",
-    "saveManualExecutions": true,
-    "callerPolicy": "workflowsFromSameOwner"
+    "binaryMode": "separate"
   },
-  "staticData": null,
-  "tags": [
-    {
-      "name": "vinh",
-      "id": "tag-vinh"
-    },
-    {
-      "name": "health",
-      "id": "tag-health"
-    }
-  ],
-  "triggerCount": 2,
-  "pinData": {},
-  "versionId": "flow06-v1"
+  "versionId": "58caa82a-b6e5-4f73-99aa-97a23cd18901",
+  "meta": {
+    "instanceId": "74397114e206792390d2318630c9cb2cd8c3ad6e9328254d2194767fe90a0e8d"
+  },
+  "nodeGroups": [],
+  "id": "rHzYFzqYnCJZblsw",
+  "tags": []
 }

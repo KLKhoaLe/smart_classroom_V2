@@ -1,13 +1,13 @@
 {
-  "name": "04 Device Command Dispatcher",
+  "name": "04_DEVICE_COMMAND_DISPATCHER_V3",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
         "path": "flow04-dispatch",
-        "options": {
-          "responseMode": "lastNode"
-        }
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson",
+        "options": {}
       },
       "id": "wh-trigger",
       "name": "Webhook Trigger",
@@ -18,7 +18,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Normalize: n8n webhook wraps body in $json.body\nconst input = $input.first().json;\nconst body = input.body ?? input;\n\nconst command_id = body.command_id;\n\nif (!command_id) {\n  throw new Error('Missing command_id in payload');\n}\n\n// UUID v4 format validation\nconst uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (!uuidRegex.test(command_id)) {\n  throw new Error('Invalid command_id format: ' + command_id);\n}\n\nreturn [{\n  json: {\n    command_id: command_id,\n    retry_count: body.retry_count ?? 0,\n    max_retries: body.max_retries ?? 3\n  }\n}];"
+        "jsCode": "const input = $input.first().json;\nconst body = input.body ?? input;\nif (!body || typeof body !== 'object' || Array.isArray(body)) {\n  throw new Error('Body phải là JSON object.');\n}\nconst command_id = body.command_id;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (typeof command_id !== 'string' || !uuid.test(command_id)) {\n  throw new Error('command_id phải là UUID hợp lệ.');\n}\nreturn [{json: {\n  command_id,\n  backend_base_url: 'http://host.docker.internal:3001'\n}}];"
       },
       "id": "parse-input",
       "name": "Parse & Validate Input",
@@ -28,10 +28,13 @@
     },
     {
       "parameters": {
-        "url": "={{$env.BACKEND_URL}}/api/commands/{{ $json.command_id }}/status",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "url": "={{ $('Parse & Validate Input').first().json.backend_base_url + '/api/commands/' + $json.command_id + '/status' }}",
         "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
           "timeout": 10000
         }
       },
@@ -39,13 +42,7 @@
       "name": "GET Command Status",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [680, 300],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "backend-token",
-          "name": "Backend API Token"
-        }
-      }
+      "position": [680, 300]
     },
     {
       "parameters": {
@@ -53,7 +50,8 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "strict",
+            "version": 2
           },
           "conditions": [
             {
@@ -67,7 +65,8 @@
             }
           ],
           "combinator": "and"
-        }
+        },
+        "options": {}
       },
       "id": "check-status",
       "name": "Is PENDING?",
@@ -77,7 +76,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Check TTL: command should not be expired\nconst command = $input.first().json;\nconst expiresAt = new Date(command.expires_at).getTime();\nconst now = Date.now();\n\nif (expiresAt <= now) {\n  return [{\n    json: {\n      command_id: command.command_id ?? command.id,\n      error: 'Command already expired',\n      expires_at: command.expires_at,\n      server_time: new Date().toISOString(),\n      skip_dispatch: true\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...command,\n    command_id: command.command_id ?? command.id,\n    ttl_remaining_ms: expiresAt - now,\n    skip_dispatch: false\n  }\n}];"
+        "jsCode": "const command = $input.first().json;\nconst expected = $('Parse & Validate Input').first().json.command_id;\nconst id = command.command_id ?? command.id;\nif (id !== expected) throw new Error('Backend trả sai command_id.');\nconst expiresAt = Date.parse(command.expires_at);\nif (!Number.isFinite(expiresAt)) throw new Error('Command thiếu expires_at hợp lệ.');\nconst remaining = expiresAt - Date.now();\nreturn [{json: {\n  ...command,\n  command_id: id,\n  ttl_remaining_ms: remaining,\n  skip_dispatch: remaining <= 0\n}}];"
       },
       "id": "check-ttl",
       "name": "Check TTL",
@@ -91,21 +90,24 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "strict",
+            "version": 2
           },
           "conditions": [
             {
               "id": "check-skip",
               "leftValue": "={{ $json.skip_dispatch }}",
-              "rightValue": true,
+              "rightValue": "",
               "operator": {
                 "type": "boolean",
-                "operation": "equals"
+                "operation": "true",
+                "singleValue": true
               }
             }
           ],
           "combinator": "and"
-        }
+        },
+        "options": {}
       },
       "id": "ttl-gate",
       "name": "TTL Expired?",
@@ -116,10 +118,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.BACKEND_URL}}/api/commands/{{ $json.command_id }}/dispatch",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "url": "={{ $('Parse & Validate Input').first().json.backend_base_url + '/api/automation/commands/' + $json.command_id + '/dispatch' }}",
         "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
           "timeout": 10000
         }
       },
@@ -127,13 +132,7 @@
       "name": "POST Dispatch → QUEUED",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1560, 120],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "backend-token",
-          "name": "Backend API Token"
-        }
-      }
+      "position": [1560, 120]
     },
     {
       "parameters": {
@@ -141,21 +140,24 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "strict",
+            "version": 2
           },
           "conditions": [
             {
-              "id": "check-queued",
-              "leftValue": "={{ $json.status }}",
-              "rightValue": "QUEUED",
+              "id": "check-dispatched",
+              "leftValue": "={{ $json.dispatched === true && $json.command?.status === 'QUEUED' }}",
+              "rightValue": "",
               "operator": {
-                "type": "string",
-                "operation": "equals"
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
               }
             }
           ],
           "combinator": "and"
-        }
+        },
+        "options": {}
       },
       "id": "verify-dispatch",
       "name": "Dispatch OK?",
@@ -165,7 +167,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const cmd = $input.first().json;\nreturn [{\n  json: {\n    success: true,\n    command_id: cmd.command_id ?? cmd.id,\n    status: cmd.status,\n    device_id: cmd.device_id,\n    command_type: cmd.command_type,\n    action: cmd.action,\n    dispatched_at: new Date().toISOString(),\n    message: 'Command dispatched to QUEUED. Simulator will claim via /api/commands/claim.'\n  }\n}];"
+        "jsCode": "const result = $input.first().json;\nconst cmd = result.command;\nconst expected = $('Parse & Validate Input').first().json.command_id;\nif (!cmd || (cmd.command_id ?? cmd.id) !== expected) {\n  throw new Error('Backend trả sai command trong kết quả dispatch.');\n}\nreturn [{json: {\n  workflow_version: 'V3',\n  success: true,\n  dispatched: true,\n  command_id: expected,\n  device_id: cmd.device_id,\n  command_type: cmd.command_type,\n  action: cmd.action,\n  level: cmd.level ?? null,\n  status: cmd.status,\n  dispatch_reason: result.reason ?? null,\n  ack_confirmed: false,\n  message: 'Đã đưa lệnh vào QUEUED. Chờ simulator claim và gửi ACK.'\n}}];"
       },
       "id": "success-output",
       "name": "Dispatch Success",
@@ -175,7 +177,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Dispatch failed - command may have been claimed/expired between check and dispatch\nconst cmd = $input.first().json;\nconst retryCount = $('Parse & Validate Input').first().json.retry_count ?? 0;\nconst maxRetries = $('Parse & Validate Input').first().json.max_retries ?? 3;\n\nreturn [{\n  json: {\n    success: false,\n    command_id: cmd.command_id ?? cmd.id,\n    status: cmd.status,\n    error: 'Dispatch did not result in QUEUED status',\n    current_status: cmd.status,\n    retry_count: retryCount,\n    max_retries: maxRetries,\n    can_retry: retryCount < maxRetries\n  }\n}];"
+        "jsCode": "const result = $input.first().json;\nconst cmd = result.command;\nconst expected = $('Parse & Validate Input').first().json.command_id;\nif (typeof result.dispatched !== 'boolean' || !cmd || (cmd.command_id ?? cmd.id) !== expected || typeof cmd.status !== 'string') {\n  throw new Error('Backend response không đúng contract dispatch.');\n}\nif (result.dispatched) throw new Error('Backend báo dispatched nhưng trạng thái không phải QUEUED.');\nreturn [{json: {\n  workflow_version: 'V3',\n  success: false,\n  dispatched: false,\n  command_id: expected,\n  device_id: cmd.device_id,\n  command_type: cmd.command_type,\n  action: cmd.action,\n  level: cmd.level ?? null,\n  status: cmd.status,\n  dispatch_reason: result.reason ?? 'DISPATCH_BLOCKED',\n  ack_confirmed: cmd.status === 'ACK',\n  can_retry: false,\n  message: 'Backend không phát lệnh ở lượt này. Xem dispatch_reason; không tự retry lệnh đã bị chặn.'\n}}];"
       },
       "id": "dispatch-fail",
       "name": "Dispatch Failed",
@@ -185,7 +187,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Command not in PENDING → already dispatched, expired, or cancelled\nconst cmd = $input.first().json;\nreturn [{\n  json: {\n    success: false,\n    command_id: cmd.command_id ?? cmd.id,\n    status: cmd.status,\n    error: 'Command not in PENDING state, cannot dispatch',\n    current_status: cmd.status,\n    message: 'Command may already be QUEUED/SENT/ACK/TIMED_OUT/CANCELLED'\n  }\n}];"
+        "jsCode": "const cmd = $input.first().json;\nconst expected = $('Parse & Validate Input').first().json.command_id;\nif ((cmd.command_id ?? cmd.id) !== expected || typeof cmd.status !== 'string') {\n  throw new Error('Backend response không đúng contract command status.');\n}\nreturn [{json: {\n  workflow_version: 'V3',\n  success: false,\n  dispatched: false,\n  command_id: expected,\n  device_id: cmd.device_id,\n  command_type: cmd.command_type,\n  action: cmd.action,\n  level: cmd.level ?? null,\n  status: cmd.status,\n  dispatch_reason: 'NOT_PENDING',\n  ack_confirmed: cmd.status === 'ACK',\n  can_retry: false,\n  message: 'Lệnh không còn PENDING. Không phát lại; xem status để biết trạng thái hiện tại.'\n}}];"
       },
       "id": "not-pending",
       "name": "Not PENDING → Skip",
@@ -195,31 +197,13 @@
     },
     {
       "parameters": {
-        "jsCode": "// TTL expired before dispatch\nconst cmd = $input.first().json;\nreturn [{\n  json: {\n    success: false,\n    command_id: cmd.command_id,\n    error: 'Command TTL expired before dispatch',\n    expires_at: cmd.expires_at,\n    message: 'Skipped dispatch; command will be cleaned up by expire API'\n  }\n}];"
+        "jsCode": "const cmd = $input.first().json;\nreturn [{json: {\n  workflow_version: 'V3',\n  success: false,\n  dispatched: false,\n  command_id: cmd.command_id,\n  device_id: cmd.device_id,\n  command_type: cmd.command_type,\n  action: cmd.action,\n  level: cmd.level ?? null,\n  status: cmd.status,\n  dispatch_reason: 'COMMAND_EXPIRED',\n  expires_at: cmd.expires_at,\n  ack_confirmed: false,\n  can_retry: false,\n  message: 'Lệnh hết hạn, bỏ qua dispatch. Node này chưa cập nhật trạng thái trong DB; backend sẽ xử lý hết hạn.'\n}}];"
       },
       "id": "ttl-expired-output",
       "name": "TTL Expired → Skip",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1560, 300]
-    },
-    {
-      "parameters": {
-        "values": {
-          "string": [
-            {
-              "name": "error",
-              "value": "=Error in WF04 Dispatch: {{ $json.message ?? $json.error ?? 'Unknown error' }}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "error-handler",
-      "name": "Error Output",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [680, 520]
     }
   ],
   "connections": {
@@ -335,21 +319,8 @@
   },
   "settings": {
     "executionOrder": "v1",
-    "saveManualExecutions": true,
-    "callerPolicy": "workflowsFromSameOwner"
+    "saveManualExecutions": true
   },
-  "staticData": null,
-  "tags": [
-    {
-      "name": "vinh",
-      "id": "tag-vinh"
-    },
-    {
-      "name": "command",
-      "id": "tag-command"
-    }
-  ],
-  "triggerCount": 1,
   "pinData": {},
-  "versionId": "flow04-v1"
+  "active": false
 }

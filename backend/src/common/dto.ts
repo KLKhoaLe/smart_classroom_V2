@@ -88,7 +88,7 @@ export class PaginationDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  page: number = 1;
+  page?: number;
 
   @ApiProperty({ required: false, default: 20 })
   @IsOptional()
@@ -96,7 +96,7 @@ export class PaginationDto {
   @IsInt()
   @Min(1)
   @Max(100)
-  limit: number = 20;
+  limit?: number;
 
   @ApiProperty({ required: false })
   @IsOptional()
@@ -261,14 +261,68 @@ export class SimulationConfigDto {
 }
 
 export class IncidentCandidateDto {
- @ApiProperty({required:false}) @IsOptional() @IsString() device_id?:string;
- @ApiProperty({required:false}) @IsOptional() @IsString() room?:string;
- @ApiProperty() @IsString() @MaxLength(80) type!:string;
- @ApiProperty() @IsString() @MaxLength(20) severity!:string;
- @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(250) title!:string;
- @ApiProperty({required:false}) @IsOptional() @IsString() @MaxLength(180) dedup_key?:string;
- @ApiProperty({required:false}) @IsOptional() @IsDateString() observed_at?:string;
- @ApiProperty({required:false}) @IsOptional() @IsObject() details?:Record<string,unknown>;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  device_id?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  room?: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  type!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(20)
+  severity!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(250)
+  title!: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(180)
+  dedup_key?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'Khóa nhận diện một sự kiện; giữ nguyên khi gửi lại.',
+  })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(250)
+  event_key?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'true khi điều kiện gây sự cố đã kết thúc.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  recovered?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsDateString()
+  observed_at?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsObject()
+  details?: Record<string, unknown>;
 }
 export class IncidentUpdateDto {
  @ApiProperty({required:false}) @IsOptional() @IsIn(['OPEN','ACKNOWLEDGED','RESOLVED']) status?:string;
