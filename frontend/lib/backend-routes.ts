@@ -1,3 +1,8 @@
+export function isAllowedBackendDelete(path: readonly string[]): boolean {
+  return path.length === 3 && path[0] === 'overrides' && /^[A-Za-z0-9_-]{1,100}$/.test(path[1])
+    && ['FAN', 'LIGHT', 'VENTILATION', 'DEHUMIDIFIER'].includes(path[2]);
+}
+
 const getPaths = new Set(['dashboard', 'rooms', 'devices', 'commands', 'telemetry', 'incidents', 'reports', 'notifications', 'health']);
 
 export function isAllowedBackendGet(path: readonly string[]): boolean {
@@ -11,6 +16,7 @@ export function isAllowedBackendGet(path: readonly string[]): boolean {
 }
 
 export function isAllowedBackendMutation(method: string, path: readonly string[]): boolean {
+  if(method==='DELETE') return isAllowedBackendDelete(path);
   const route=path.join('/');
   if(method==='POST' && ['commands/manual','incidents','reports'].includes(route)) return true;
   if(method==='POST' && /^reports\/daily\/[A-Za-z0-9_-]{1,100}$/.test(route)) return true;

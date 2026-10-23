@@ -4,6 +4,7 @@ export type ManualAction = 'ON' | 'OFF';
 export const HOLD_MINUTES = [1, 5, 10, 15, 30, 60, 120] as const;
 
 export type ManualOverride = {
+  id?: string;
   device_id: string;
   command_type: Actuator;
   action: ManualAction;
@@ -68,4 +69,14 @@ export async function sendManualRequest(
     throw new Error(typeof message === 'string' ? message : `Gửi yêu cầu thất bại (HTTP ${response.status}).`);
   }
   if (body?.accepted !== true) throw new Error('Phản hồi chưa xác nhận đã nhận yêu cầu. Kiểm tra backend/flow03 trước khi gửi lại.');
+}
+
+export async function releaseManualOverride(deviceId: string, override: ManualOverride, signal: AbortSignal): Promise<{ awaiting_ack: boolean }> {
+  const response = await fetch(`/api/backend/overrides/${encodeURIComponent(deviceId)}/${override.command_type}`, {
+    method: 'DELETE', headers: {'content-type':'application/json'}, signal,
+    body: JSON.stringify({expected_id: override.id, expected_expires_at: override.expires_at}),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || body?.ok !== true || body?.mode !== 'AUTO') throw new Error(body?.message || body?.error || 'Chưa xác nhận trả về AUTO.');
+  return {awaiting_ack: body.awaiting_ack === true};
 }

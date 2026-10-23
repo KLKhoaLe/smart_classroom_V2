@@ -159,6 +159,11 @@ export class ProposalDto extends DeviceDto {
   expires_at!: string;
 }
 
+export class ClearOverrideDto {
+  @IsOptional() @IsUUID() expected_id?: string;
+  @IsOptional() @IsDateString() expected_expires_at?: string;
+}
+
 export class OverrideDto extends DeviceDto {
   @ApiProperty({ enum: TYPES })
   @IsIn(TYPES)

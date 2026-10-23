@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Device, formatTime } from '../lib/dashboard';
-import { countdown, HOLD_MINUTES, manualPayload, overrideMode, sendManualRequest } from '../lib/manual-control';
+import { releaseManualOverride, ManualOverride, countdown, HOLD_MINUTES, manualPayload, overrideMode, sendManualRequest } from '../lib/manual-control';
 import { useManualOverrides } from './useManualOverrides';
 
 const labels: Record<string, string> = {
@@ -54,6 +54,25 @@ export default function ManualControls({ device, enabled, dashboardError, onSent
     }
   }
 
+  async function release(override: ManualOverride) {
+    if (busy || !verified || activePost.current) return;
+    const controller = new AbortController(); activePost.current = controller;
+    setBusy(true); setMessage('');
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const result = await releaseManualOverride(device.id, override, controller.signal);
+      if (mounted.current) {
+        setMessage(`${labels[override.command_type]}: đã bỏ giữ thủ công. AUTO được phép ở lượt xử lý tiếp theo. ${result.awaiting_ack ? 'Lệnh đã gửi vẫn đang chờ ACK; không thể thu hồi từ thiết bị.' : 'Đã hủy lệnh thủ công chưa gửi, nếu có.'} Trạng thái thực tế không tự đổi.`);
+        await Promise.all([overrides.refresh(), onSent()]);
+      }
+    } catch (error) {
+      if (mounted.current) setMessage(controller.signal.aborted ? 'Chưa xác định kết quả trả về AUTO. Chờ đọc lại chế độ trước khi thử lại.' : error instanceof Error ? error.message : 'Lỗi kết nối.');
+    } finally {
+      clearTimeout(timer);
+      if (mounted.current && activePost.current === controller) { activePost.current = null; setBusy(false); }
+    }
+  }
+
   return <div className="manual-controls">
     <div className="manual-toolbar">
       <div><h3>Điều khiển thủ công</h3><p>Chọn thời gian giữ cho yêu cầu bật/tắt tiếp theo.</p></div>
@@ -81,6 +100,7 @@ export default function ManualControls({ device, enabled, dashboardError, onSent
             <strong>{mode.label}</strong>
             {mode.kind === 'manual' && <><span className="override-countdown">Còn {countdown(mode.remaining)}</span><small>Hết giữ: {formatTime(override!.expires_at)}</small></>}
           </div>
+          {mode.kind === 'manual' && <button className="button" disabled={busy || !verified} onClick={() => void release(override!)}>Trả {name} về AUTO</button>}
           <div className="manual-actions">
             <button className="button" disabled={disabled} onClick={() => void submit(state.command_type, 'ON')} aria-label={`Yêu cầu bật ${name} phòng ${device.room_code}`}>Yêu cầu bật</button>
             <button className="button" disabled={disabled} onClick={() => void submit(state.command_type, 'OFF')} aria-label={`Yêu cầu tắt ${name} phòng ${device.room_code}`}>Yêu cầu tắt</button>
