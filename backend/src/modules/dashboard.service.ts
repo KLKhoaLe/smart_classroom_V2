@@ -53,7 +53,7 @@ export class DashboardService {
           .filter((s: any) => s.device_id === d.id)
           .map((s: any) => ({
             ...s,
-            in_sync: s.desired_state === s.actual_state
+            in_sync: s.desired_state === s.actual_state && (s.desired_level == null || s.desired_level === s.actual_level)
           }));
 
         return {
@@ -65,6 +65,7 @@ export class DashboardService {
       decisions,
       active_overrides: overrides,
       server_time: new Date().toISOString(),
+      manual_levels_enabled: true,
       manual_enabled: !!process.env.N8N_AUTOMATION_WEBHOOK_URL
     };
   }

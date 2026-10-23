@@ -23,7 +23,7 @@ function wrap(pg){return {query:async(sql,args)=>{
 test('Nest HTTP + bundled simulator: telemetry -> command -> claim -> ACK -> dashboard',async()=>{
  const pg=new PGlite(),db=wrap(pg);let app;
  try{
-  await new InitialSchema1792200000000().up(db);await seed(db);
+  await new InitialSchema1792200000000().up(db);await new (require('../dist/database/migrations/1792700000000-ActuatorLevels').ActuatorLevels1792700000000)().up(db);await seed(db);
   class TestModule{}
   app=await NestFactory.create({module:TestModule,controllers:[ApiController],providers:[{provide:DataSource,useValue:db},DeviceService,TelemetryService,CommandsService,DashboardService,IncidentReportService]},{logger:false});
   app.setGlobalPrefix('api');app.useGlobalPipes(new ValidationPipe({whitelist:true,transform:true,forbidUnknownValues:true}));await app.listen(0,'127.0.0.1');

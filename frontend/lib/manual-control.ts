@@ -4,9 +4,11 @@ export type ManualAction = 'ON' | 'OFF';
 export const HOLD_MINUTES = [1, 5, 10, 15, 30, 60, 120] as const;
 
 export type ManualOverride = {
+  id?: string;
   device_id: string;
   command_type: Actuator;
   action: ManualAction;
+  level?: number | null;
   expires_at: string;
 };
 
@@ -44,12 +46,16 @@ export function overrideMode(override: ManualOverride | undefined, now: number, 
   return { kind: 'auto', label: 'AUTO được phép', remaining: 0 } as const;
 }
 
-export function manualPayload(deviceId: string, commandType: string, action: string, minutes: number) {
+export function manualPayload(deviceId: string, commandType: string, action: string, minutes: number, level?: number) {
   if (!deviceId || !ACTUATORS.includes(commandType as Actuator) || !['ON', 'OFF'].includes(action)
     || !Number.isInteger(minutes) || minutes < 1 || minutes > 120) {
     throw new Error('Thiết bị, hành động hoặc thời gian giữ không hợp lệ (1–120 phút).');
   }
-  return { device_id: deviceId, command_type: commandType, action, override_minutes: minutes };
+  if (level !== undefined) {
+    const max = commandType === 'FAN' ? 3 : commandType === 'LIGHT' ? 100 : 0;
+    if (!max || !Number.isInteger(level) || level < 0 || level > max || (action === 'OFF' ? level !== 0 : level === 0)) throw new Error('Mức quạt/đèn không hợp lệ.');
+  }
+  return { device_id: deviceId, command_type: commandType, action, override_minutes: minutes, ...(level !== undefined ? {level} : {}) };
 }
 
 // API này chỉ xác nhận webhook nhận yêu cầu. Actual vẫn phải đọc từ dashboard/ACK.
@@ -68,4 +74,14 @@ export async function sendManualRequest(
     throw new Error(typeof message === 'string' ? message : `Gửi yêu cầu thất bại (HTTP ${response.status}).`);
   }
   if (body?.accepted !== true) throw new Error('Phản hồi chưa xác nhận đã nhận yêu cầu. Kiểm tra backend/flow03 trước khi gửi lại.');
+}
+
+export async function releaseManualOverride(deviceId: string, override: ManualOverride, signal: AbortSignal): Promise<{ awaiting_ack: boolean }> {
+  const response = await fetch(`/api/backend/overrides/${encodeURIComponent(deviceId)}/${override.command_type}`, {
+    method: 'DELETE', headers: {'content-type':'application/json'}, signal,
+    body: JSON.stringify({expected_id: override.id, expected_expires_at: override.expires_at}),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || body?.ok !== true || body?.mode !== 'AUTO') throw new Error(body?.message || body?.error || 'Chưa xác nhận trả về AUTO.');
+  return {awaiting_ack: body.awaiting_ack === true};
 }

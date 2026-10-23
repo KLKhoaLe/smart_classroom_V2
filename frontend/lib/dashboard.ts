@@ -4,6 +4,8 @@ export type DeviceState = {
   command_type: string;
   actual_state: string | null;
   desired_state: string;
+  desired_level?: number | null;
+  actual_level?: number | null;
   confirmed_at: string | null;
 };
 
@@ -28,6 +30,7 @@ export type DashboardData = {
   stats: { telemetry_count: number; pending_commands: number; open_incidents: number };
   decisions: { id: string; source: string; reason: string; created_at: string }[];
   manual_enabled: boolean;
+  manual_levels_enabled?: boolean;
   server_time?: string;
 };
 
@@ -36,6 +39,7 @@ export type Command = {
   device_code: string;
   command_type: string;
   action: string;
+  level?: number | null;
   status: string;
   requested_at: string;
 };

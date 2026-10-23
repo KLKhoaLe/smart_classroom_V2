@@ -1,4 +1,4 @@
-﻿import {NextRequest,NextResponse} from 'next/server';
+import {NextRequest,NextResponse} from 'next/server';
 import {isAllowedBackendGet,isAllowedBackendMutation} from '../../../../lib/backend-routes';
 async function proxy(req:NextRequest,context:{params:Promise<{path:string[]}>}){
  const {path}=await context.params;const route=path.join('/');
@@ -8,4 +8,4 @@ async function proxy(req:NextRequest,context:{params:Promise<{path:string[]}>}){
   return new NextResponse(await r.text(),{status:r.status,headers:{'content-type':'application/json','cache-control':'no-store'}});
  }catch{return NextResponse.json({error:'Không kết nối được backend.'},{status:503});}
 }
-export const GET=proxy;export const POST=proxy;export const PATCH=proxy;
+export const GET=proxy;export const POST=proxy;export const PATCH=proxy;export const DELETE=proxy;

@@ -1,3 +1,6 @@
+import { actuatorLevel } from '../common/actuator-level';
+import { ConflictException } from '@nestjs/common';
+import { ClearOverrideDto, TYPES } from '../common/dto';
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
@@ -126,28 +129,39 @@ export class DeviceService {
   async setOverride(b: OverrideDto) {
     const d = await this.resolve(b.device_id);
     const minutes = b.override_minutes || 30;
+    const level = actuatorLevel(b.command_type,b.action,b.level);
     const [row] = await this.db.query(
-      `INSERT INTO manual_overrides(id, device_id, command_type, action, expires_at)
-       VALUES($1, $2, $3, $4, now() + ($5 * interval '1 minute'))
+      `INSERT INTO manual_overrides(id, device_id, command_type, action, expires_at, level)
+       VALUES($1, $2, $3, $4, now() + ($5 * interval '1 minute'), $6)
        ON CONFLICT(device_id, command_type)
-       DO UPDATE SET action=EXCLUDED.action, expires_at=EXCLUDED.expires_at
+       DO UPDATE SET action=EXCLUDED.action, expires_at=EXCLUDED.expires_at, level=EXCLUDED.level
        RETURNING *`,
-      [randomUUID(), d.id, b.command_type, b.action, minutes]
+      [randomUUID(), d.id, b.command_type, b.action, minutes, level]
     );
     return { ok: true, device_code: d.code, ...row };
   }
 
-  async clearOverride(ref: string, commandType: string) {
+  async clearOverride(ref: string, commandType: string, expected: ClearOverrideDto = {}) {
+    if (!(TYPES as readonly string[]).includes(commandType)) throw new BadRequestException('Loại thiết bị không hợp lệ.');
     const d = await this.resolve(ref);
-    const result = await this.db.query(
-      `WITH deleted AS (
-         DELETE FROM manual_overrides 
-         WHERE device_id=$1 AND command_type=$2 
-         RETURNING *
-       ) SELECT * FROM deleted`,
-      [d.id, commandType]
-    );
-    return { ok: true, deleted: result.length > 0 };
+    return this.db.transaction(async q => {
+      // Same device lock as resolve/claim/ACK: an unsent command cannot escape cancellation.
+      await q.query('SELECT id FROM devices WHERE id=$1 FOR UPDATE', [d.id]);
+      const [current] = await q.query('SELECT * FROM manual_overrides WHERE device_id=$1 AND command_type=$2', [d.id, commandType]);
+      if (current && ((expected.expected_id && current.id !== expected.expected_id) ||
+        (expected.expected_expires_at && new Date(current.expires_at).getTime() !== Date.parse(expected.expected_expires_at)))) {
+        throw new ConflictException('Chế độ giữ đã thay đổi. Làm mới trước khi trả về AUTO.');
+      }
+      await q.query('DELETE FROM manual_overrides WHERE device_id=$1 AND command_type=$2', [d.id, commandType]);
+      const cancelled = await q.query(`WITH cancelled AS (
+        UPDATE device_commands SET status='CANCELLED'
+        WHERE device_id=$1 AND command_type=$2 AND source='MANUAL' AND status IN ('PENDING','QUEUED')
+        RETURNING id) SELECT * FROM cancelled`, [d.id, commandType]);
+      const sent = await q.query(`SELECT id FROM device_commands WHERE device_id=$1 AND command_type=$2 AND status='SENT' AND expires_at>clock_timestamp()`, [d.id, commandType]);
+      if (current || cancelled.length) await q.query(`INSERT INTO device_events(id,device_id,event_type,payload)
+        VALUES($1,$2,'MANUAL_RELEASED',$3::jsonb)`, [randomUUID(), d.id, JSON.stringify({command_type:commandType,cancelled:cancelled.map((c:any)=>c.id)})]);
+      return {ok:true,deleted:!!current,mode:'AUTO',cancelled_commands:cancelled.length,awaiting_ack:sent.length>0};
+    });
   }
 
   // === CONTROL PROPOSALS (cho WF07-09) ===

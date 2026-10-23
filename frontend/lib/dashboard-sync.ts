@@ -49,7 +49,13 @@ export async function refreshResources(options: {
       if (!signal.aborted) onDashboard(result);
     }),
     readResource<Command[]>('/api/backend/commands', signal, fetcher, timeoutMs).then(result => {
-      if (!signal.aborted) onCommands(result);
+      if (!signal.aborted) {
+        const body: unknown = result.ok ? result.value : null;
+        if (result.ok) {
+          const items = Array.isArray(body) ? body : (body as {items?: unknown})?.items;
+          onCommands(Array.isArray(items) ? {ok:true,value:items} : {ok:false,error:'Danh sách lệnh sai định dạng.'});
+        } else onCommands(result);
+      }
     }),
   ]);
 }
