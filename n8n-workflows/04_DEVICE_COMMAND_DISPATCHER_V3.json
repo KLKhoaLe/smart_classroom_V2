@@ -6,29 +6,43 @@
         "httpMethod": "POST",
         "path": "flow04-dispatch",
         "responseMode": "lastNode",
-        "responseData": "firstEntryJson",
         "options": {}
       },
-      "id": "wh-trigger",
+      "id": "769af36f-aa9b-43db-bca9-63bf25db80be",
       "name": "Webhook Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [240, 300],
+      "position": [
+        -1760,
+        272
+      ],
       "webhookId": "flow04-dispatch"
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json;\nconst body = input.body ?? input;\nif (!body || typeof body !== 'object' || Array.isArray(body)) {\n  throw new Error('Body phải là JSON object.');\n}\nconst command_id = body.command_id;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (typeof command_id !== 'string' || !uuid.test(command_id)) {\n  throw new Error('command_id phải là UUID hợp lệ.');\n}\nreturn [{json: {\n  command_id,\n  backend_base_url: 'http://host.docker.internal:3001'\n}}];"
+        "jsCode": "const input = $input.first().json;\nconst body = input.body ?? input;\nif (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Body phải là JSON object.');\nconst expectedInternal=String((typeof $env!=='undefined'?$env.INTERNAL_WEBHOOK_TOKEN:'')||'').trim();\nconst receivedInternal=String(input.headers?.['x-smart-classroom-internal']||'').trim();\nif(expectedInternal && receivedInternal!==expectedInternal) throw new Error('INTERNAL_WEBHOOK_UNAUTHORIZED');\nconst command_id = body.command_id;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (typeof command_id !== 'string' || !uuid.test(command_id)) throw new Error('command_id phải là UUID hợp lệ.');\nreturn [{json:{command_id,backend_base_url:String((typeof $env!=='undefined'?$env.BACKEND_BASE_URL:'')||'https://smart-classroom-backend-allm.onrender.com').replace(/\\/+$/,'')}}];"
       },
-      "id": "parse-input",
+      "id": "a01edab2-eabf-410e-9afc-bf90181b16e7",
       "name": "Parse & Validate Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [
+        -1536,
+        272
+      ]
     },
     {
       "parameters": {
         "url": "={{ $('Parse & Validate Input').first().json.backend_base_url + '/api/commands/' + $json.command_id + '/status' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.BACKEND_API_TOKEN ? 'Bearer ' + $env.BACKEND_API_TOKEN : '' }}"
+            }
+          ]
+        },
         "options": {
           "response": {
             "response": {
@@ -38,11 +52,17 @@
           "timeout": 10000
         }
       },
-      "id": "get-command",
+      "id": "7ea70fac-1059-48e8-a8ac-c498c689a330",
       "name": "GET Command Status",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [680, 300]
+      "position": [
+        -1328,
+        272
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
       "parameters": {
@@ -68,21 +88,27 @@
         },
         "options": {}
       },
-      "id": "check-status",
+      "id": "651f480f-35b7-4cea-9c7f-692c48559c2a",
       "name": "Is PENDING?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [900, 300]
+      "position": [
+        -1104,
+        272
+      ]
     },
     {
       "parameters": {
         "jsCode": "const command = $input.first().json;\nconst expected = $('Parse & Validate Input').first().json.command_id;\nconst id = command.command_id ?? command.id;\nif (id !== expected) throw new Error('Backend trả sai command_id.');\nconst expiresAt = Date.parse(command.expires_at);\nif (!Number.isFinite(expiresAt)) throw new Error('Command thiếu expires_at hợp lệ.');\nconst remaining = expiresAt - Date.now();\nreturn [{json: {\n  ...command,\n  command_id: id,\n  ttl_remaining_ms: remaining,\n  skip_dispatch: remaining <= 0\n}}];"
       },
-      "id": "check-ttl",
+      "id": "2d838d09-63d4-4d72-afc4-f837e3a813f4",
       "name": "Check TTL",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 200]
+      "position": [
+        -880,
+        160
+      ]
     },
     {
       "parameters": {
@@ -109,16 +135,28 @@
         },
         "options": {}
       },
-      "id": "ttl-gate",
+      "id": "1ad313bd-294d-4601-8f5f-7ff8e55a7490",
       "name": "TTL Expired?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [1340, 200]
+      "position": [
+        -656,
+        160
+      ]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "={{ $('Parse & Validate Input').first().json.backend_base_url + '/api/automation/commands/' + $json.command_id + '/dispatch' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.BACKEND_API_TOKEN ? 'Bearer ' + $env.BACKEND_API_TOKEN : '' }}"
+            }
+          ]
+        },
         "options": {
           "response": {
             "response": {
@@ -128,11 +166,17 @@
           "timeout": 10000
         }
       },
-      "id": "dispatch-command",
+      "id": "e8f792cc-691e-4556-8b2c-d30a59d1dfe5",
       "name": "POST Dispatch → QUEUED",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1560, 120]
+      "position": [
+        -448,
+        80
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
       "parameters": {
@@ -159,53 +203,69 @@
         },
         "options": {}
       },
-      "id": "verify-dispatch",
+      "id": "880f19e4-f584-426c-9a9a-4f5724fbf733",
       "name": "Dispatch OK?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [1780, 120]
+      "position": [
+        -224,
+        80
+      ]
     },
     {
       "parameters": {
         "jsCode": "const result = $input.first().json;\nconst cmd = result.command;\nconst expected = $('Parse & Validate Input').first().json.command_id;\nif (!cmd || (cmd.command_id ?? cmd.id) !== expected) {\n  throw new Error('Backend trả sai command trong kết quả dispatch.');\n}\nreturn [{json: {\n  workflow_version: 'V3',\n  success: true,\n  dispatched: true,\n  command_id: expected,\n  device_id: cmd.device_id,\n  command_type: cmd.command_type,\n  action: cmd.action,\n  level: cmd.level ?? null,\n  status: cmd.status,\n  dispatch_reason: result.reason ?? null,\n  ack_confirmed: false,\n  message: 'Đã đưa lệnh vào QUEUED. Chờ simulator claim và gửi ACK.'\n}}];"
       },
-      "id": "success-output",
+      "id": "a45032ab-cfa5-45f0-8ba2-8b9f3be988ef",
       "name": "Dispatch Success",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2000, 40]
+      "position": [
+        0,
+        0
+      ]
     },
     {
       "parameters": {
         "jsCode": "const result = $input.first().json;\nconst cmd = result.command;\nconst expected = $('Parse & Validate Input').first().json.command_id;\nif (typeof result.dispatched !== 'boolean' || !cmd || (cmd.command_id ?? cmd.id) !== expected || typeof cmd.status !== 'string') {\n  throw new Error('Backend response không đúng contract dispatch.');\n}\nif (result.dispatched) throw new Error('Backend báo dispatched nhưng trạng thái không phải QUEUED.');\nreturn [{json: {\n  workflow_version: 'V3',\n  success: false,\n  dispatched: false,\n  command_id: expected,\n  device_id: cmd.device_id,\n  command_type: cmd.command_type,\n  action: cmd.action,\n  level: cmd.level ?? null,\n  status: cmd.status,\n  dispatch_reason: result.reason ?? 'DISPATCH_BLOCKED',\n  ack_confirmed: cmd.status === 'ACK',\n  can_retry: false,\n  message: 'Backend không phát lệnh ở lượt này. Xem dispatch_reason; không tự retry lệnh đã bị chặn.'\n}}];"
       },
-      "id": "dispatch-fail",
+      "id": "7020c32d-6e50-4a5b-b9ca-efbbc62e911d",
       "name": "Dispatch Failed",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2000, 220]
+      "position": [
+        0,
+        192
+      ]
     },
     {
       "parameters": {
         "jsCode": "const cmd = $input.first().json;\nconst expected = $('Parse & Validate Input').first().json.command_id;\nif ((cmd.command_id ?? cmd.id) !== expected || typeof cmd.status !== 'string') {\n  throw new Error('Backend response không đúng contract command status.');\n}\nreturn [{json: {\n  workflow_version: 'V3',\n  success: false,\n  dispatched: false,\n  command_id: expected,\n  device_id: cmd.device_id,\n  command_type: cmd.command_type,\n  action: cmd.action,\n  level: cmd.level ?? null,\n  status: cmd.status,\n  dispatch_reason: 'NOT_PENDING',\n  ack_confirmed: cmd.status === 'ACK',\n  can_retry: false,\n  message: 'Lệnh không còn PENDING. Không phát lại; xem status để biết trạng thái hiện tại.'\n}}];"
       },
-      "id": "not-pending",
+      "id": "de9d2d46-8dfa-4e97-bfdc-bdec8db96c61",
       "name": "Not PENDING → Skip",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 420]
+      "position": [
+        -880,
+        384
+      ]
     },
     {
       "parameters": {
         "jsCode": "const cmd = $input.first().json;\nreturn [{json: {\n  workflow_version: 'V3',\n  success: false,\n  dispatched: false,\n  command_id: cmd.command_id,\n  device_id: cmd.device_id,\n  command_type: cmd.command_type,\n  action: cmd.action,\n  level: cmd.level ?? null,\n  status: cmd.status,\n  dispatch_reason: 'COMMAND_EXPIRED',\n  expires_at: cmd.expires_at,\n  ack_confirmed: false,\n  can_retry: false,\n  message: 'Lệnh hết hạn, bỏ qua dispatch. Node này chưa cập nhật trạng thái trong DB; backend sẽ xử lý hết hạn.'\n}}];"
       },
-      "id": "ttl-expired-output",
+      "id": "e4656633-84e3-4cd6-8ae8-f557c959ceee",
       "name": "TTL Expired → Skip",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1560, 300]
+      "position": [
+        -448,
+        272
+      ]
     }
   ],
+  "pinData": {},
   "connections": {
     "Webhook Trigger": {
       "main": [
@@ -317,10 +377,16 @@
       ]
     }
   },
+  "active": true,
   "settings": {
     "executionOrder": "v1",
-    "saveManualExecutions": true
+    "binaryMode": "separate"
   },
-  "pinData": {},
-  "active": false
+  "versionId": "b80f9797-0345-40c5-aa9b-296e4657b0f1",
+  "meta": {
+    "instanceId": "74397114e206792390d2318630c9cb2cd8c3ad6e9328254d2194767fe90a0e8d"
+  },
+  "nodeGroups": [],
+  "id": "3DOyjVDDSQVrUwi9",
+  "tags": []
 }

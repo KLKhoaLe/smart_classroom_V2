@@ -5,9 +5,10 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "simulator-telemetry",
+        "responseMode": "lastNode",
         "options": {}
       },
-      "id": "83d92735-1e87-456f-8fd2-16dfe2043de2",
+      "id": "be91c917-0225-4382-bb33-2b2433597531",
       "name": "Receive Telemetry",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
@@ -20,9 +21,9 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "x"
+        "jsCode": "const env = typeof $env !== 'undefined' ? $env : {};\nconst raw = $json;\nconst input = raw.body ?? raw;\nconst expectedToken = String(env.SIMULATOR_WEBHOOK_TOKEN || '').trim();\nconst auth=String(raw.headers?.authorization||'');\nconst receivedToken = String(raw.headers?.['x-smart-classroom-token'] || raw.headers?.['X-Smart-Classroom-Token'] || (auth.startsWith('Bearer ')?auth.slice(7):'')).trim();\nconst source_authenticated = !expectedToken || receivedToken === expectedToken;\nconst base_url = String(env.BACKEND_BASE_URL || 'https://smart-classroom-backend-allm.onrender.com').replace(/\\/+$/, '');\nconst n8n_public_url = String(env.N8N_PUBLIC_URL || env.WEBHOOK_URL || '').replace(/\\/+$/, '');\nreturn {json:{input,source_authenticated,config:{base_url,n8n_public_url,max_age_seconds:120}}};"
       },
-      "id": "87169f28-b797-4469-9ae3-8b691bdc9675",
+      "id": "ab4ffec9-7329-4dce-b425-581aa87d3139",
       "name": "Configuration",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -34,9 +35,9 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "xxxxxxx"
+        "jsCode": "const input = $json.input;\nconst config = $json.config;\nconst errors = [];\nif ($json.source_authenticated !== true) errors.push('Nguồn gửi telemetry không được xác thực.');\nlet data = input;\nif (typeof data === 'string') {\n  try { data = JSON.parse(data); } catch { errors.push('Body không phải JSON hợp lệ.'); }\n}\nif (!data || typeof data !== 'object' || Array.isArray(data)) {\n  errors.push('Body phải là một JSON object.'); data = {};\n}\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nfor (const key of ['event_id','run_id']) if(typeof data[key] !== 'string' || !uuid.test(data[key])) errors.push(`${key} phải là UUID hợp lệ.`);\nif(typeof data.device_id !== 'string' || !data.device_id.trim() || data.device_id.length > 100) errors.push('device_id phải là mã thiết bị hoặc UUID.');\nif(!Number.isSafeInteger(data.sequence) || data.sequence < 0) errors.push('sequence phải là số nguyên không âm.');\nconst ranges = {temperature:[-10,60],humidity:[0,100],light_percent:[0,100],occupancy_count:[0,100],co2_ppm:[300,5000],power_w:[0,20000]};\nfor(const [key,[min,max]] of Object.entries(ranges)) {\n  const v=data[key];\n  if(typeof v!=='number'||!Number.isFinite(v)||v<min||v>max) errors.push(`${key} phải là số từ ${min} đến ${max}.`);\n}\nif(!Number.isInteger(data.occupancy_count)) errors.push('occupancy_count phải là số nguyên.');\nif(typeof data.door_open!=='boolean') errors.push('door_open phải là boolean.');\nconst time = typeof data.observed_at==='string' && /^\\d{4}-\\d\\d-\\d\\dT.*(?:Z|[+-]\\d\\d:\\d\\d)$/.test(data.observed_at) ? Date.parse(data.observed_at) : NaN;\nif(!Number.isFinite(time)) errors.push('observed_at phải là ISO timestamp có múi giờ.');\nelse if(time > Date.now()+60000) errors.push('observed_at vượt quá 60 giây trong tương lai.');\nfor(const key of ['simulated','occupancy']) if(data[key]!==undefined && typeof data[key]!=='boolean') errors.push(`${key} phải là boolean.`);\nif(typeof data.occupancy==='boolean' && data.occupancy!==(data.occupancy_count>0)) errors.push('occupancy không khớp occupancy_count.');\nfor(const key of ['device_code','room','room_code']) if(data[key]!==undefined&&(typeof data[key]!=='string'||!data[key].trim()||data[key].length>100)) errors.push(`${key} không hợp lệ.`);\nif(data.schema_version!==undefined && data.schema_version!==2)errors.push('Chỉ hỗ trợ telemetry schema_version 2 (khác với tên workflow V3).');\nif(data.light_raw!==undefined && (!Number.isInteger(data.light_raw)||data.light_raw<0||data.light_raw>4095))errors.push('light_raw phải là số nguyên từ 0 đến 4095.');\nfor(const [key,max] of [['pm25_ug_m3',500],['water_l_min',100]]) if(data[key]!==undefined&&(typeof data[key]!=='number'||!Number.isFinite(data[key])||data[key]<0||data[key]>max)) errors.push(`${key} không hợp lệ.`);\nif(data.actual_state!==undefined && (!data.actual_state || typeof data.actual_state!=='object'||Array.isArray(data.actual_state))) errors.push('actual_state phải là object.');\nconst fields=['device_id','device_code','event_id','run_id','sequence','observed_at','temperature','humidity','light_percent','occupancy_count','co2_ppm','power_w','door_open','simulated','occupancy','room','room_code','light_raw','schema_version','actual_state','pm25_ug_m3','water_l_min'];\nconst payload=Object.fromEntries(fields.filter(k=>data[k]!==undefined).map(k=>[k,data[k]]));\nconst raw = input && typeof input==='object'&&!Array.isArray(input) ? input : {received_body:input??null};\nreturn {json:{valid:errors.length===0,errors,telemetry_payload:payload,\n error_record:{device_code:typeof data.device_code==='string'?data.device_code.slice(0,80):typeof data.device_id==='string'?data.device_id.slice(0,80):undefined,reason:errors.join(' | ')||'UNKNOWN_VALIDATION_ERROR',raw_payload:raw},\n max_age_seconds:config.max_age_seconds}};\n"
       },
-      "id": "9e095dda-cb26-4cec-b2a7-3003d83cf955",
+      "id": "f5541d9d-70c0-4f96-a16a-aa2deae1bf71",
       "name": "Validate Telemetry",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -70,7 +71,7 @@
         },
         "options": {}
       },
-      "id": "9115dd80-3e4f-4567-a91b-e68d8f05da76",
+      "id": "f87fee45-49fc-4859-a684-d30437a46c13",
       "name": "Valid Payload?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -83,6 +84,15 @@
       "parameters": {
         "method": "POST",
         "url": "={{ $('Configuration').first().json.config.base_url + '/api/telemetry' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.BACKEND_API_TOKEN ? 'Bearer ' + $env.BACKEND_API_TOKEN : '' }}"
+            }
+          ]
+        },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.telemetry_payload) }}",
@@ -97,21 +107,24 @@
           "timeout": 10000
         }
       },
-      "id": "599a28f7-0b9f-498c-ac4c-8d25a740bfd3",
+      "id": "0f2ddae6-ec94-46ab-9d18-31662367d948",
       "name": "Save Telemetry",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
         -656,
         784
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1200
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "xx"
+        "jsCode": "const response=$json;\nconst source=$('Validate Telemetry').first().json;\nconst status=response.statusCode;\nconst body=response.body;\nif(!Number.isInteger(status)) throw new Error('Không nhận được statusCode. Kiểm tra Full Response của Save Telemetry.');\nif(status>=200&&status<300){\n if(typeof body?.created!=='boolean'||!body?.telemetry?.id||!body?.telemetry?.raw_payload)throw new Error('Backend response sai contract v2.');\n return {json:{saved:true,created:body.created,telemetry:body.telemetry,max_age_seconds:source.max_age_seconds}};\n}\nif([400,404,409,422].includes(status)) return {json:{saved:false,error_record:{device_code:source.error_record.device_code,reason:'BACKEND_REJECTED_HTTP_'+status+' | '+JSON.stringify(body),raw_payload:source.telemetry_payload}}};\nthrow new Error('Backend HTTP '+status+': '+JSON.stringify(body));\n"
       },
-      "id": "18c014f2-501c-4424-85da-8b8e54a1f1fa",
+      "id": "978186de-c4d6-4309-a795-f9039ee66d1c",
       "name": "Check Backend Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -145,7 +158,7 @@
         },
         "options": {}
       },
-      "id": "c4fcb804-4d5e-495c-aefd-11a2bf5e3d17",
+      "id": "0b25f0ca-f10c-4fa2-97fa-108c23820569",
       "name": "Saved Successfully?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -179,7 +192,7 @@
         },
         "options": {}
       },
-      "id": "840ae962-59aa-459b-8dfb-3a583dad648e",
+      "id": "5c741f6e-406e-4694-b1d1-0ebbb029834c",
       "name": "New Event?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -191,9 +204,9 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "x"
+        "jsCode": "const age_seconds=(Date.now()-Date.parse($json.telemetry.observed_at))/1000;\nreturn {json:{...$json,age_seconds,fresh:Number.isFinite(age_seconds)&&age_seconds<=$json.max_age_seconds&&age_seconds>=-60}};"
       },
-      "id": "12297273-0bb0-407a-a059-92e1a2264fd7",
+      "id": "e83859b5-18a2-4a4c-a9e6-2b9e087ebc10",
       "name": "Check Freshness",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -227,7 +240,7 @@
         },
         "options": {}
       },
-      "id": "8fb430fd-4fb3-47ea-b1ca-8428894b55af",
+      "id": "33121ba8-e827-4393-822c-9aa661a8df18",
       "name": "Fresh Enough?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -239,9 +252,9 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "x"
+        "jsCode": "const t=$json.telemetry;\nconst payload=t.raw_payload;\nreturn {json:{...payload,device_id:t.device_id,telemetry_id:t.id,correlation_id:t.event_id,event_id:t.event_id,workflow_version:'V3',ingestion_status:'ACCEPTED_NEW',ready_for_decision:true,occupancy:t.occupancy_count>0,age_seconds:$json.age_seconds,next_step:'Connect flow 02 here when available'}};\n"
       },
-      "id": "92a0f37e-1941-413a-b965-968f09d70695",
+      "id": "43c31d18-066a-4c5f-867d-029a58b6a533",
       "name": "Ready for Flow 02",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -253,9 +266,9 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": ""
+        "jsCode": "return {json:{ingestion_status:'STORED_STALE',telemetry_id:$json.telemetry.id,event_id:$json.telemetry.event_id,age_seconds:$json.age_seconds,ready_for_decision:false,reason:'Đã lưu lịch sử nhưng quá tuổi dữ liệu cho quyết định mới.'}};"
       },
-      "id": "85012cfc-cf57-4f81-b1cd-b9f81ec18b3e",
+      "id": "f9f288bf-d997-4a82-ba3e-88ec26549fa6",
       "name": "Skip Stale Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -267,9 +280,9 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": ""
+        "jsCode": "return {json:{ingestion_status:'DUPLICATE',telemetry_id:$json.telemetry.id,event_id:$json.telemetry.event_id,ready_for_decision:false,reason:'Backend đã có event_id này; không gọi lại flow 02.'}};"
       },
-      "id": "151e480d-832f-4799-a2d0-1f882457a212",
+      "id": "2d39b993-2c39-4122-a3c4-5fce737b80c3",
       "name": "Skip Duplicate Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -282,6 +295,15 @@
       "parameters": {
         "method": "POST",
         "url": "={{ $('Configuration').first().json.config.base_url + '/api/ingestion-errors' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.BACKEND_API_TOKEN ? 'Bearer ' + $env.BACKEND_API_TOKEN : '' }}"
+            }
+          ]
+        },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.error_record) }}",
@@ -294,21 +316,24 @@
           "timeout": 10000
         }
       },
-      "id": "3700ec97-d173-4e08-9a13-ae543b8d0805",
+      "id": "ac04e19e-1935-49d6-943b-03540bc972a6",
       "name": "Save Ingestion Error",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
         64,
         1184
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1200
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": ""
+        "jsCode": "return {json:{ingestion_status:'REJECTED',error_id:$json.id,reason:$json.reason,ready_for_decision:false}};"
       },
-      "id": "47fad018-22f2-41b1-b027-a2a61886e00c",
+      "id": "38c0caf5-8fdd-492e-befa-87a5b27cce0b",
       "name": "Rejected and Logged",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -319,11 +344,11 @@
     },
     {
       "parameters": {
-        "content": "## FLOW 01 — V3 | Chạy độc lập\n1. Configuration: base_url mặc định host.docker.internal:3001 cho n8n Docker Desktop.\n2. backend/.env: HOST=0.0.0.0 nếu n8n trong Docker gọi backend trên Windows; restart backend. Chỉ thử trên mạng local tin cậy.\n3. Nếu API_TOKEN có giá trị: chọn Header Auth cho cả hai HTTP Request node (Authorization: Bearer ...). Không hardcode token vào JSON.\n4. Publish flow rồi đổi CHỈ Telemetry URL của simulator sang Production URL /webhook/simulator-telemetry. Heartbeat/ACK/Claim giữ như cũ.\n5. Không publish hai webhook có cùng path. Flow02 chưa cần có, không có node gọi workflow chưa cấu hình.\n\nWebhook trả lời ngay: HTTP200 chỉ xác nhận n8n nhận request, xem Executions/DB để biết kết quả xử lý. JSON hỏng ở tầng HTTP có thể bị n8n từ chối trước Code node.\nV3 là tên workflow; telemetry schema vẫn là version 2.\n",
+        "content": "## FLOW 01 V3 — HOST READY\n- Trigger chính: `POST /webhook/simulator-telemetry`.\n- Backend lấy từ `BACKEND_BASE_URL`; Authorization lấy từ `BACKEND_API_TOKEN`.\n- Nếu đặt `SIMULATOR_WEBHOOK_TOKEN`, simulator dùng cùng giá trị ở `OUTBOUND_TOKEN`.\n- Telemetry hợp lệ/mới/fresh được gọi tuần tự WF07 → WF08 → WF09 → WF02 để proposal/event được ghi trước quyết định.\n- Lỗi monitoring dùng `neverError`, không làm mất telemetry; WF02 vẫn chạy và tự đọc proposal còn hạn.\n- Duplicate event không gọi lại monitoring/AI/automation.\n",
         "height": 510,
         "width": 800
       },
-      "id": "ef71b559-4be2-4b61-bf80-7c1a79a997a1",
+      "id": "2bd78e09-e724-4a7e-80cd-6888be34ba94",
       "name": "Setup and boundaries",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -338,7 +363,7 @@
         "height": 400,
         "width": 700
       },
-      "id": "4efdae5a-b62e-4b64-b1e9-e338bf719203",
+      "id": "8cb99176-30c5-4667-8513-3081d71d5170",
       "name": "Outcome notes",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -349,34 +374,176 @@
     },
     {
       "parameters": {
-        "workflowId": {
-          "__rl": true,
-          "value": "rhda2n2rYNcXPrLo",
-          "mode": "list",
-          "cachedResultUrl": "/workflow/rhda2n2rYNcXPrLo",
-          "cachedResultName": "02_AI_DECISION_ENGINE_V3"
+        "method": "POST",
+        "url": "={{ (($env.N8N_PUBLIC_URL || $env.WEBHOOK_URL || '').replace(/\\/+$/, '')) + '/webhook/duong-monitoring-07' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Smart-Classroom-Internal",
+              "value": "={{ $env.INTERNAL_WEBHOOK_TOKEN || '' }}"
+            }
+          ]
         },
-        "workflowInputs": {
-          "mappingMode": "defineBelow",
-          "value": {},
-          "matchingColumns": [],
-          "schema": [],
-          "attemptToConvertTypes": false,
-          "convertFieldsToString": true
-        },
-        "mode": "each",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Ready for Flow 02').first().json) }}",
         "options": {
-          "waitForSubWorkflow": true
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
         }
       },
-      "type": "n8n-nodes-base.executeWorkflow",
-      "typeVersion": 1.3,
+      "id": "e714cd34-3f16-41db-8b62-296b01b3a7fb",
+      "name": "Call WF07 Hosted",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        1008,
-        464
+        1392,
+        560
       ],
-      "id": "3c6d26e9-7799-409e-bcdd-838e36ffc10f",
-      "name": "Call '02_AI_DECISION_ENGINE_V3'"
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 750,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ (($env.N8N_PUBLIC_URL || $env.WEBHOOK_URL || '').replace(/\\/+$/, '')) + '/webhook/duong-monitoring-08' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Smart-Classroom-Internal",
+              "value": "={{ $env.INTERNAL_WEBHOOK_TOKEN || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Ready for Flow 02').first().json) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "192f9b30-eda7-4c1b-b633-70f9ab7206d2",
+      "name": "Call WF08 Hosted",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1648,
+        656
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 750,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ (($env.N8N_PUBLIC_URL || $env.WEBHOOK_URL || '').replace(/\\/+$/, '')) + '/webhook/duong-monitoring-09' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Smart-Classroom-Internal",
+              "value": "={{ $env.INTERNAL_WEBHOOK_TOKEN || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Ready for Flow 02').first().json) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "9a8dcae0-4fa1-4bc3-92dc-11f90281639e",
+      "name": "Call WF09 Hosted",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1712,
+        896
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 750,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://unwoven-partition-cadet.ngrok-free.dev/webhook/flow02-decision",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Smart-Classroom-Internal",
+              "value": "={{ $env.INTERNAL_WEBHOOK_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Ready for Flow 02').first().json) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "5b4076d8-c701-4993-9324-ea51cc363521",
+      "name": "Call WF02 Hosted",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1936,
+        1120
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 750,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Ready for Flow 02').first().json;\n\nconst wf07 = $('Call WF07 Hosted').first().json;\nconst wf08 = $('Call WF08 Hosted').first().json;\nconst wf09 = $('Call WF09 Hosted').first().json;\n\nreturn [\n  {\n    json: {\n      ...base,\n\n      monitoring: {\n        wf07_status: wf07.statusCode ?? null,\n        wf07_body: wf07.body ?? null,\n\n        wf08_status: wf08.statusCode ?? null,\n        wf08_body: wf08.body ?? null,\n\n        wf09_status: wf09.statusCode ?? null,\n        wf09_body: wf09.body ?? null\n      }\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1632,
+        1136
+      ],
+      "id": "6cb52344-59d7-4a14-b6b1-82aa950b2631",
+      "name": "Attach Monitoring Context"
     }
   ],
   "pinData": {},
@@ -534,7 +701,56 @@
       "main": [
         [
           {
-            "node": "Call '02_AI_DECISION_ENGINE_V3'",
+            "node": "Call WF07 Hosted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call WF07 Hosted": {
+      "main": [
+        [
+          {
+            "node": "Call WF08 Hosted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call WF08 Hosted": {
+      "main": [
+        [
+          {
+            "node": "Call WF09 Hosted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call WF09 Hosted": {
+      "main": [
+        [
+          {
+            "node": "Attach Monitoring Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call WF02 Hosted": {
+      "main": [
+        []
+      ]
+    },
+    "Attach Monitoring Context": {
+      "main": [
+        [
+          {
+            "node": "Call WF02 Hosted",
             "type": "main",
             "index": 0
           }
@@ -547,11 +763,11 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "e8ef003c-1062-44ac-9238-f14bc1148359",
+  "versionId": "a0d0efa0-4b3c-465a-b72a-47cd7c48cabd",
   "meta": {
     "instanceId": "74397114e206792390d2318630c9cb2cd8c3ad6e9328254d2194767fe90a0e8d"
   },
   "nodeGroups": [],
-  "id": "0aLQLKC9k1CC3XjM",
+  "id": "Ri4n6s7MPwbjJctZ",
   "tags": []
 }
