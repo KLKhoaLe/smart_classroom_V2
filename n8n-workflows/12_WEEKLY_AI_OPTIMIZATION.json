@@ -2,88 +2,472 @@
   "name": "12_WEEKLY_AI_OPTIMIZATION",
   "nodes": [
     {
-      "parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "0 1 * * 1"}]}},
-      "id": "511b3a8d-3420-4d65-8c0d-65ee47121212",
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 1 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "4530cca7-7e27-418a-88c1-896aa346078d",
       "name": "Monday at 01:00 local",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [-820, 0]
-    },
-    {
-      "parameters": {"url": "http://host.docker.internal:3001/api/rooms", "sendHeaders": false, "options": {"timeout": 10000}},
-      "id": "54e21b3b-92bf-453a-91d3-16d0e84e1212",
-      "name": "List Rooms",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-600, 0]
-    },
-    {
-      "parameters": {"mode": "runOnceForAllItems", "jsCode": "const rooms=$input.all().flatMap(i=>Array.isArray(i.json)?i.json:[i.json]).filter(r=>r&&r.code);return rooms.map(r=>({json:{room:r.code}}));"},
-      "id": "5e7c7e16-69b5-46d2-86ce-61a36c331212",
-      "name": "One Item per Room",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [-380, 0]
-    },
-    {
-      "parameters": {"url": "={{ 'http://host.docker.internal:3001/api/reports/weekly/context/' + encodeURIComponent($json.room) }}", "sendHeaders": false, "options": {"timeout": 30000}},
-      "id": "dd26ec60-3b9b-4f17-a27f-1e9a4dbd1212",
-      "name": "Get Weekly Context",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-160, 0]
+      "position": [
+        -1184,
+        112
+      ]
     },
     {
       "parameters": {
-        "conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2}, "conditions": [{"id": "b58b8772-2eba-435c-9001-095aeb5b1212", "leftValue": "={{ $json.eligible }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}], "combinator": "and"},
+        "url": "={{ (($env.BACKEND_BASE_URL || 'https://smart-classroom-backend-allm.onrender.com').replace(/\\/+$/, '')) + '/api/rooms' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.BACKEND_API_TOKEN ? 'Bearer ' + $env.BACKEND_API_TOKEN : '' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "2ff35908-946a-4a7a-9986-6f10739de53b",
+      "name": "List Rooms",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -960,
+        112
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "jsCode": "const rooms=$input.all().flatMap(i=>Array.isArray(i.json)?i.json:[i.json]).filter(r=>r&&r.code);return rooms.map(r=>({json:{room:r.code}}));"
+      },
+      "id": "b4a493da-963e-4e29-9d27-1f31dc7faca5",
+      "name": "One Item per Room",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ (($env.BACKEND_BASE_URL || 'https://smart-classroom-backend-allm.onrender.com').replace(/\\/+$/, '')) + '/api/reports/weekly/context/' + encodeURIComponent($json.room) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.BACKEND_API_TOKEN ? 'Bearer ' + $env.BACKEND_API_TOKEN : '' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "8934b1de-6384-43ba-89df-c52156bee069",
+      "name": "Get Weekly Context",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -528,
+        112
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b58b8772-2eba-435c-9001-095aeb5b1212",
+              "leftValue": "={{ $json.eligible }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
         "options": {}
       },
-      "id": "86ccde26-f49d-4df0-8d5b-8f0abac91212",
+      "id": "7b2efb7e-1eb4-43b5-b950-ae51bce11516",
       "name": "Check Weekly Data Quality",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [80, 0]
+      "position": [
+        -288,
+        112
+      ]
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const ctx=$json;const m=ctx.metrics||{};const policy=ctx.policy?.config||{};const n=(v)=>Number(v);const recommendations=[];const add=(action,reason,evidence)=>recommendations.push({action,reason,evidence});const temp=n(m.avg_temperature),humidity=n(m.avg_humidity),co2=n(m.avg_co2_ppm),kwh=n(m.estimated_kwh);const incidents=Array.isArray(ctx.incidents)?ctx.incidents:[];if(!ctx.eligible){add('Collect more weekly telemetry before changing policy','Data coverage is below the minimum required for optimization. Keep the current policy until the room has at least four active days and 100 samples.',{active_days:n(m.active_days),telemetry_count:n(m.telemetry_count),required_active_days:4,required_telemetry_count:100});}else{if(Number.isFinite(temp)&&Number.isFinite(n(policy.temperature_on))&&temp>=n(policy.temperature_on)-1)add('Review cooling schedule and room occupancy','The weekly average temperature is within 1 C of the current cooling threshold.',{avg_temperature:temp,temperature_on:n(policy.temperature_on)});if(Number.isFinite(humidity)&&Number.isFinite(n(policy.humidity_on))&&humidity>=n(policy.humidity_on)-5)add('Inspect ventilation and moisture sources','The weekly average humidity is close to the current humidity threshold.',{avg_humidity:humidity,humidity_on:n(policy.humidity_on)});if(Number.isFinite(co2)&&Number.isFinite(n(policy.co2_on))&&co2>=n(policy.co2_on)-150)add('Review ventilation during occupied periods','The weekly average CO2 is close to the current ventilation threshold.',{avg_co2_ppm:co2,co2_on:n(policy.co2_on)});for(const incident of incidents.filter(x=>n(x.count)>0).slice(0,3))add('Investigate recurring '+String(incident.type||'room')+' events','Review event timing and sensor/device health before changing automation policy.',{type:incident.type,severity:incident.severity,count:n(incident.count)});if(recommendations.length===0)add('Keep the current policy and review next week','Available weekly metrics do not indicate a threshold that warrants a change.',{avg_temperature:Number.isFinite(temp)?temp:null,avg_humidity:Number.isFinite(humidity)?humidity:null,avg_co2_ppm:Number.isFinite(co2)?co2:null,estimated_kwh:Number.isFinite(kwh)?kwh:null});}const summary='Rule-based weekly review for '+ctx.room+' ('+ctx.period_start+' to '+ctx.period_end+'): '+(ctx.eligible?'data quality is sufficient':'data quality is insufficient')+'; '+recommendations.length+' review recommendation(s) generated. No policy was changed.';return {json:{room:ctx.room,period_start:ctx.period_start,period_end:ctx.period_end,metrics:{...m,policy:ctx.policy||null,incidents,recommendations,generated_by:'WF12_RULES',data_quality:ctx.eligible?'SUFFICIENT':'INSUFFICIENT'},summary}};"
+        "jsCode": "const ctx=$json;const m=ctx.metrics||{};const policy=ctx.policy?.config||{};const n=(v)=>Number(v);const recommendations=[];const add=(action,reason,evidence)=>recommendations.push({action,reason,evidence});const temp=n(m.avg_temperature),humidity=n(m.avg_humidity),co2=n(m.avg_co2_ppm),kwh=n(m.estimated_kwh);const incidents=Array.isArray(ctx.incidents)?ctx.incidents:[];\nif(!ctx.eligible){add('Thu thập thêm telemetry trước khi đổi policy','Độ phủ dữ liệu chưa đủ cho tối ưu tuần.',{active_days:n(m.active_days),telemetry_count:n(m.telemetry_count),required_active_days:4,required_telemetry_count:100});}\nelse{if(Number.isFinite(temp)&&Number.isFinite(n(policy.temperature_on))&&temp>=n(policy.temperature_on)-1)add('Xem lại lịch làm mát và mức sử dụng phòng','Nhiệt độ trung bình tuần gần ngưỡng bật quạt.',{avg_temperature:temp,temperature_on:n(policy.temperature_on)});if(Number.isFinite(humidity)&&Number.isFinite(n(policy.humidity_on))&&humidity>=n(policy.humidity_on)-5)add('Kiểm tra thông gió và nguồn ẩm','Độ ẩm trung bình tuần gần ngưỡng policy.',{avg_humidity:humidity,humidity_on:n(policy.humidity_on)});if(Number.isFinite(co2)&&Number.isFinite(n(policy.co2_on))&&co2>=n(policy.co2_on)-150)add('Xem lại thông gió khi có người','CO2 trung bình tuần gần ngưỡng thông gió.',{avg_co2_ppm:co2,co2_on:n(policy.co2_on)});for(const incident of incidents.filter(x=>n(x.count)>0).slice(0,3))add('Điều tra sự cố lặp '+String(incident.type||'ROOM'),'Xem thời điểm sự cố và tình trạng cảm biến/thiết bị trước khi chỉnh policy.',{type:incident.type,severity:incident.severity,count:n(incident.count)});if(recommendations.length===0)add('Giữ policy hiện tại và xem lại tuần sau','Số liệu tuần chưa cho thấy cần đổi ngưỡng.',{avg_temperature:Number.isFinite(temp)?temp:null,avg_humidity:Number.isFinite(humidity)?humidity:null,avg_co2_ppm:Number.isFinite(co2)?co2:null,estimated_kwh:Number.isFinite(kwh)?kwh:null});}\nconst env=typeof $env!=='undefined'?$env:{};\nconst ai_enabled=ctx.eligible&&String(env.WEEKLY_AI_ENABLED||'true').toLowerCase()!=='false'&&String(env.GROQ_API_KEY||'').length>0;\nconst base={room:ctx.room,period_start:ctx.period_start,period_end:ctx.period_end,metrics:{...m,policy:ctx.policy||null,incidents,recommendations,generated_by:'WF12_RULES',data_quality:ctx.eligible?'SUFFICIENT':'INSUFFICIENT'},summary:`Weekly review ${ctx.room} (${ctx.period_start} → ${ctx.period_end}): ${ctx.eligible?'đủ':'chưa đủ'} dữ liệu; ${recommendations.length} đề xuất rule. Chưa thay đổi policy.`};\nreturn {json:{...base,ai_enabled,weekly_context:ctx}};"
       },
-      "id": "680b75a5-2169-47d5-b7d3-848328c91212",
+      "id": "455adff3-c894-4569-94a3-5cee9fcecba7",
       "name": "Build Rule-Based Weekly Draft",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [360, -100]
+      "position": [
+        0,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'http://host.docker.internal:3001/api/reports/weekly/' + encodeURIComponent($json.room) }}",
+        "url": "={{ (($env.BACKEND_BASE_URL || 'https://smart-classroom-backend-allm.onrender.com').replace(/\\/+$/, '')) + '/api/reports/weekly/' + encodeURIComponent($json.room) }}",
         "sendHeaders": true,
-        "headerParameters": {"parameters": [{"name": "Content-Type", "value": "application/json"}]},
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.BACKEND_API_TOKEN ? 'Bearer ' + $env.BACKEND_API_TOKEN : '' }}"
+            }
+          ]
+        },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({period_start:$json.period_start,period_end:$json.period_end,metrics:$json.metrics,summary:$json.summary}) }}",
-        "options": {"timeout": 30000}
+        "options": {
+          "timeout": 30000
+        }
       },
-      "id": "95404cac-72e7-4a33-b26e-77a81d341212",
+      "id": "fee0ab83-2574-4f78-adfd-54b65d90c8dc",
       "name": "Save Weekly DRAFT",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [840, -100]
+      "position": [
+        480,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "report-weekly-now",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "380c2a23-50ea-4bcf-be7b-70ec3ee1e648",
+      "name": "Run Weekly Review Now",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -880,
+        400
+      ],
+      "webhookId": "9f171b6b-f108-4879-9e39-5abf0424deab"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "98a92a5b-8b93-4dac-8369-caceeb7d6754",
+              "leftValue": "={{ $json.ai_enabled }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "aa41489d-bd8a-45a1-809d-928a13a0c39f",
+      "name": "Use Weekly AI?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        128,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const x=$json;const ctx=x.weekly_context;const schema={type:'object',properties:{summary:{type:'string'},recommendations:{type:'array',maxItems:6,items:{type:'object',properties:{action:{type:'string'},reason:{type:'string'},evidence:{type:'object'}},required:['action','reason','evidence'],additionalProperties:false}}},required:['summary','recommendations'],additionalProperties:false};const ai_request={model:String((typeof $env!=='undefined'?$env.GROQ_MODEL:'')||'openai/gpt-oss-20b'),messages:[{role:'system',content:'Bạn phân tích Smart Classroom theo tuần. Chỉ đề xuất DRAFT để con người duyệt; không tự đổi policy. Chỉ dùng số liệu đã cho, không bịa tiết kiệm phần trăm hoặc nguyên nhân.'},{role:'user',content:JSON.stringify({room:ctx.room,period_start:ctx.period_start,period_end:ctx.period_end,metrics:ctx.metrics,incidents:ctx.incidents,policy:ctx.policy,rule_recommendations:x.metrics.recommendations})}],max_completion_tokens:900,response_format:{type:'json_schema',json_schema:{name:'weekly_optimization',strict:true,schema}}};return {json:{...x,ai_request}};"
+      },
+      "id": "5b7ecb34-feea-450a-878f-e64f1312862b",
+      "name": "Build Weekly AI Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        368,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.GROQ_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.ai_request) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 20000
+        }
+      },
+      "id": "a131b0ed-b41a-44d8-8373-f74147e2bb9c",
+      "name": "Ask Weekly AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        608,
+        224
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const base=$('Build Weekly AI Request').first().json;const r=$json;try{if(r.error||r.statusCode<200||r.statusCode>=300)throw new Error('AI_HTTP');const txt=r.body?.choices?.[0]?.message?.content;if(typeof txt!=='string')throw new Error('AI_EMPTY');const ai=JSON.parse(txt);if(typeof ai.summary!=='string'||!Array.isArray(ai.recommendations)||ai.recommendations.length>6)throw new Error('AI_SCHEMA');for(const x of ai.recommendations)if(!x||typeof x.action!=='string'||typeof x.reason!=='string'||!x.evidence||typeof x.evidence!=='object'||Array.isArray(x.evidence))throw new Error('AI_ITEM');return {json:{room:base.room,period_start:base.period_start,period_end:base.period_end,metrics:{...base.metrics,recommendations:ai.recommendations,generated_by:'WF12_AI',ai_model:String((typeof $env!=='undefined'?$env.GROQ_MODEL:'')||'openai/gpt-oss-20b'),rule_fallback:base.metrics.recommendations},summary:ai.summary.slice(0,5000)}};}catch(e){return {json:{...base,metrics:{...base.metrics,generated_by:'WF12_RULE_FALLBACK',ai_error:e.message},summary:base.summary+' AI không khả dụng/không hợp lệ, giữ rule fallback.'}};}"
+      },
+      "id": "6b176d2f-1bce-4030-a389-6bb04347136e",
+      "name": "Validate Weekly AI or Fallback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const x=$json;return {json:{room:x.room,period_start:x.period_start,period_end:x.period_end,metrics:x.metrics,summary:x.summary}};"
+      },
+      "id": "da524400-d976-45d5-80f0-d92c534569a2",
+      "name": "Use Rule Weekly Draft",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        448
+      ]
     }
   ],
+  "pinData": {},
   "connections": {
-    "Monday at 01:00 local": {"main": [[{"node": "List Rooms", "type": "main", "index": 0}]]},
-    "List Rooms": {"main": [[{"node": "One Item per Room", "type": "main", "index": 0}]]},
-    "One Item per Room": {"main": [[{"node": "Get Weekly Context", "type": "main", "index": 0}]]},
-    "Get Weekly Context": {"main": [[{"node": "Check Weekly Data Quality", "type": "main", "index": 0}]]},
-    "Check Weekly Data Quality": {"main": [[{"node": "Build Rule-Based Weekly Draft", "type": "main", "index": 0}], [{"node": "Build Rule-Based Weekly Draft", "type": "main", "index": 0}]]},
-    "Build Rule-Based Weekly Draft": {"main": [[{"node": "Save Weekly DRAFT", "type": "main", "index": 0}]]}
+    "Monday at 01:00 local": {
+      "main": [
+        [
+          {
+            "node": "List Rooms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Rooms": {
+      "main": [
+        [
+          {
+            "node": "One Item per Room",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One Item per Room": {
+      "main": [
+        [
+          {
+            "node": "Get Weekly Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Weekly Context": {
+      "main": [
+        [
+          {
+            "node": "Check Weekly Data Quality",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Weekly Data Quality": {
+      "main": [
+        [
+          {
+            "node": "Build Rule-Based Weekly Draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Rule-Based Weekly Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Rule-Based Weekly Draft": {
+      "main": [
+        [
+          {
+            "node": "Use Weekly AI?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Weekly Review Now": {
+      "main": [
+        [
+          {
+            "node": "List Rooms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use Weekly AI?": {
+      "main": [
+        [
+          {
+            "node": "Build Weekly AI Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Use Rule Weekly Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Weekly AI Request": {
+      "main": [
+        [
+          {
+            "node": "Ask Weekly AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Weekly AI": {
+      "main": [
+        [
+          {
+            "node": "Validate Weekly AI or Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Weekly AI or Fallback": {
+      "main": [
+        [
+          {
+            "node": "Save Weekly DRAFT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use Rule Weekly Draft": {
+      "main": [
+        [
+          {
+            "node": "Save Weekly DRAFT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "active": false,
-  "settings": {"executionOrder": "v1", "timezone": "Asia/Ho_Chi_Minh"},
-  "versionId": "2d8b5bd7-6b58-4581-b282-1b9d20921212",
-  "meta": {"templateCredsSetupCompleted": false},
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "1f5ab396-3946-4494-b16a-9f03cb118d6a",
+  "meta": {
+    "instanceId": "74397114e206792390d2318630c9cb2cd8c3ad6e9328254d2194767fe90a0e8d"
+  },
+  "nodeGroups": [],
+  "id": "GUP9WDzFI5WPCmIf",
   "tags": []
 }

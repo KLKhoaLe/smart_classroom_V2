@@ -2,64 +2,60 @@
   "name": "09_AFTER_HOURS_SECURITY_V2_DUONG",
   "nodes": [
     {
-      "id": "7839a3f6-e2c7-4faf-86bc-c75cb4b5f15b",
+      "parameters": {},
+      "id": "5d668dff-0b02-46c6-a955-4b303432db6d",
       "name": "Chay thu thu cong",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "parameters": {},
       "position": [
-        0,
-        0
+        -496,
+        304
       ]
     },
     {
-      "id": "612ea25c-b51b-4e9a-aea2-ecfb535aa005",
-      "name": "Nhan tu WF01",
-      "type": "n8n-nodes-base.executeWorkflowTrigger",
-      "typeVersion": 1.1,
       "parameters": {
         "inputSource": "passthrough"
       },
+      "id": "3ec5ebc6-e703-4072-9424-501bd075fff5",
+      "name": "Nhan tu WF01",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
       "position": [
-        0,
-        180
+        -496,
+        480
       ]
     },
     {
-      "id": "94273c00-6ab7-49d7-944e-704e38a6dfe2",
-      "name": "Webhook demo local",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
       "parameters": {
         "httpMethod": "POST",
         "path": "duong-monitoring-09",
         "responseMode": "lastNode",
         "options": {}
       },
+      "id": "cc78d542-47c7-4045-b9a6-994cb712a3b2",
+      "name": "Webhook demo local",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
       "position": [
-        0,
-        360
+        -496,
+        672
       ],
       "webhookId": "3662de3d-a585-41d6-a94d-047e29557de4"
     },
     {
-      "id": "4fd84d8e-9723-4834-88da-30942ed9c0d3",
+      "parameters": {
+        "jsCode": "const raw=$input.first().json;\nconst d=raw.body??raw;\nconst env=typeof $env!=='undefined'?$env:{};\nconst expected=String(env.INTERNAL_WEBHOOK_TOKEN||'').trim();\nconst received=String(raw.headers?.['x-smart-classroom-internal']||'').trim();\nif(raw.webhookUrl&&expected&&received!==expected)throw new Error('INTERNAL_WEBHOOK_UNAUTHORIZED');\nreturn [{json:{\n flow:9,\n backend_base_url:String(env.BACKEND_BASE_URL||'https://smart-classroom-backend-allm.onrender.com').replace(/\\/+$/,'')+'/api',\n device_ref:d.device_id??d.device_code??String(env.DEFAULT_DEVICE_REF||'ESP32_A101'),\n telemetry_id:d.telemetry_id??d.telemetry?.id??null,\n correlation_id:d.correlation_id??d.event_id??null,\n email_enabled:String(env.MONITORING_EMAIL_ENABLED||'false').toLowerCase()==='true',\n email_to:String(env.MONITORING_EMAIL_TO||'')\n}}];"
+      },
+      "id": "a3b38fcd-1b6d-4ba6-a76d-580aab6a271f",
       "name": "Cau hinh",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "parameters": {
-        "jsCode": "const raw=$input.first().json; const d=raw.body??raw;\nreturn [{json:{flow:9,backend_base_url:'http://host.docker.internal:3001/api',device_ref:'ESP32_A101',\ntelemetry_id:d.telemetry_id??d.telemetry?.id??null,email_enabled:false,email_to:''}}];"
-      },
       "position": [
-        240,
-        180
+        -256,
+        480
       ]
     },
     {
-      "id": "748efc11-27e4-4e90-8bcf-7d0f3f806bf0",
-      "name": "Co telemetry_id?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
       "parameters": {
         "conditions": {
           "options": {
@@ -84,94 +80,130 @@
         },
         "options": {}
       },
+      "id": "91d973c2-3f56-419c-a9a8-ed331f7a97fc",
+      "name": "Co telemetry_id?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
       "position": [
-        480,
-        180
+        -16,
+        480
       ]
     },
     {
-      "id": "9d67457b-4a78-46d8-b527-41c997a71dfa",
+      "parameters": {
+        "url": "={{ $json.backend_base_url + '/telemetry?device_id=' + encodeURIComponent($json.device_ref) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.BACKEND_API_TOKEN ? 'Bearer ' + $env.BACKEND_API_TOKEN : '' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "4e7d862f-c5de-44af-9d43-ae86e83b3a20",
       "name": "Doc telemetry moi nhat",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "parameters": {
-        "url": "={{ $json.backend_base_url + '/telemetry?device_id=' + encodeURIComponent($json.device_ref) }}",
-        "options": {
-          "timeout": 15000
-        }
-      },
       "position": [
-        720,
-        360
-      ]
+        224,
+        672
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
-      "id": "de30324d-cbb4-443a-9672-deb302e96314",
-      "name": "Chon telemetry da luu",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
       "parameters": {
         "jsCode": "const rows=$input.all().flatMap(x=>Array.isArray(x.json)?x.json:[x.json]);\nif(!rows.length||!rows[0].id)throw new Error('Chưa có telemetry. Chạy simulator HTTP hoặc script demo trước.');\nreturn [{json:{...$('Cau hinh').first().json,telemetry_id:rows[0].id}}];"
       },
+      "id": "6bb1292b-3adf-4f74-bc4e-66c1a89c49f2",
+      "name": "Chon telemetry da luu",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        960,
-        360
+        464,
+        672
       ]
     },
     {
-      "id": "f0dafa73-724a-4f8a-bea0-ff24e638e276",
+      "parameters": {
+        "url": "={{ $('Cau hinh').first().json.backend_base_url + '/duong-monitoring/context/9/' + $json.telemetry_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.BACKEND_API_TOKEN ? 'Bearer ' + $env.BACKEND_API_TOKEN : '' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "82cf4dff-598e-4964-a914-239e82f4d135",
       "name": "Doc policy lich va trang thai",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "parameters": {
-        "url": "={{ $('Cau hinh').first().json.backend_base_url + '/duong-monitoring/context/9/' + $json.telemetry_id }}",
-        "options": {
-          "timeout": 15000
-        }
-      },
       "position": [
-        1200,
-        180
-      ]
+        704,
+        480
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
-      "id": "23adf509-8e1c-4f2e-aae9-fe0e45b1a826",
-      "name": "Danh gia WF9",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
       "parameters": {
         "jsCode": "function evaluate(c, flow) {\n    const t = c?.telemetry, p = c?.policy?.config, s = c?.settings;\n    const source = 'WF' + String(flow).padStart(2, '0');\n    const fail = (reason) => ({ status: 'REJECTED', flow, reason });\n    const number = (v) => typeof v === 'number' && Number.isFinite(v);\n    if (![7, 8, 9].includes(flow) || !t || !p || !s)\n        return fail('CONTEXT_REQUIRED');\n    const at = Date.parse(t.observed_at);\n    if (!Number.isFinite(at) || !t.id || !t.device_id || !t.event_id || !t.run_id ||\n        !Number.isSafeInteger(Number(t.sequence)) || Number(t.sequence) < 0 ||\n        !number(t.temperature) || t.temperature < -10 || t.temperature > 60 ||\n        !number(t.humidity) || t.humidity < 0 || t.humidity > 100 ||\n        !number(t.co2_ppm) || t.co2_ppm < 300 || t.co2_ppm > 5000 ||\n        !number(t.power_w) || t.power_w < 0 || t.power_w > 20000 ||\n        !Number.isInteger(t.occupancy_count) || t.occupancy_count < 0 || t.occupancy_count > 100 ||\n        typeof t.door_open !== 'boolean')\n        return fail('INVALID_TELEMETRY');\n    const ranges = { environment_hold_seconds: [0, 3600], recovery_seconds: [0, 3600],\n        security_recovery_seconds: [0, 3600], max_gap_seconds: [1, 120], high_power_w: [0, 20000],\n        proposal_ttl_seconds: [5, 300], environment_priority: [0, 100], energy_priority: [0, 100] };\n    for (const k of Object.keys(ranges))\n        if (!number(s[k]) || s[k] < ranges[k][0] || s[k] > ranges[k][1])\n            return fail('INVALID_SETTING_' + k);\n    if (!Number.isInteger(s.environment_priority) || !Number.isInteger(s.energy_priority))\n        return fail('INVALID_PRIORITY');\n    const old = c.state ?? null;\n    if (old && (old.device_id !== t.device_id || old.flow !== flow || !Number.isFinite(Date.parse(old.observed_at))))\n        return fail('STATE_MISMATCH');\n    if (old && (at <= Date.parse(old.observed_at) || (old.run_id === t.run_id && Number(t.sequence) <= old.sequence)))\n        return { status: 'IGNORED', flow, reason: 'DUPLICATE_OR_OUT_OF_ORDER' };\n    const dt = old ? (at - Date.parse(old.observed_at)) / 1000 : 0;\n    const connected = !!old && old.run_id === t.run_id && dt > 0 && dt <= s.max_gap_seconds;\n    const sameRules = connected && old.rules_key === c.rules_key;\n    const state = { device_id: t.device_id, flow, run_id: t.run_id, sequence: Number(t.sequence),\n        observed_at: t.observed_at, rules_key: c.rules_key, conditions: {} };\n    const out = { contract_version: 'duong-monitoring-1', status: 'EVALUATED', flow,\n        telemetry_id: t.id, device_id: t.device_id, room_code: c.room.code, proposals: [], events: [],\n        observations: {}, next_state: state };\n    const evidence = { event_id: t.event_id, telemetry_id: t.id, observed_at: t.observed_at,\n        temperature: t.temperature, humidity: t.humidity, co2_ppm: t.co2_ppm, power_w: t.power_w,\n        occupancy_count: t.occupancy_count, door_open: t.door_open, simulated: t.simulated };\n    const event = (type, recovered, reason) => out.events.push({\n        event_key: `${source}:${type}:${t.event_id}:${recovered ? 'RECOVERED' : 'OPEN'}`,\n        dedup_key: `${source}:${t.device_id}:${type}`, source, type,\n        severity: recovered ? 'INFO' : 'WARNING', recovered, reason, device_id: t.device_id,\n        room_code: c.room.code, telemetry_id: t.id, observed_at: t.observed_at, evidence\n    });\n    const condition = (key, bad, hold, recovery, reason) => {\n        const prev = old?.conditions?.[key];\n        const x = { active: prev?.active === true, since: null, clear_since: null };\n        if (bad) {\n            x.since = sameRules && prev?.since ? prev.since : t.observed_at;\n            if (!x.active && (at - Date.parse(x.since)) / 1000 >= hold) {\n                x.active = true;\n                event(key, false, reason);\n            }\n        }\n        else if (x.active) {\n            x.clear_since = sameRules && prev?.clear_since ? prev.clear_since : t.observed_at;\n            if ((at - Date.parse(x.clear_since)) / 1000 >= recovery) {\n                x.active = false;\n                event(key, true, 'Điều kiện đã hồi phục đủ thời gian cấu hình.');\n            }\n        }\n        state.conditions[key] = x;\n        return x.active;\n    };\n    const proposal = (desired, priority, reason) => out.proposals.push({\n        source, device_id: t.device_id, telemetry_id: t.id, desired_state: desired, priority, reason,\n        expires_at: new Date(at + s.proposal_ttl_seconds * 1000).toISOString(), evidence\n    });\n    if (flow === 7) {\n        const desired = {}, metrics = [];\n        for (const [metric, key, actuator, type, min, max] of [\n            ['temperature', 'temperature_on', 'FAN', 'HIGH_TEMPERATURE', -10, 60],\n            ['humidity', 'humidity_on', 'DEHUMIDIFIER', 'HIGH_HUMIDITY', 0, 100],\n            ['co2_ppm', 'co2_on', 'VENTILATION', 'HIGH_CO2', 300, 5000]\n        ]) {\n            if (!number(p[key]) || p[key] < min || p[key] > max)\n                return fail('INVALID_POLICY_' + key);\n            const active = condition(type, t[metric] >= p[key], s.environment_hold_seconds, s.recovery_seconds, `${metric}=${t[metric]}, ngưỡng=${p[key]}, duy trì ${s.environment_hold_seconds}s`);\n            if (active)\n                desired[actuator] = 'ON';\n            metrics.push({ metric, value: t[metric], threshold: p[key], active, since: state.conditions[type].since });\n        }\n        out.observations = { severity: Object.keys(desired).length ? 'WARNING' : 'NORMAL_OR_WAITING', metrics };\n        if (Object.keys(desired).length)\n            proposal(desired, s.environment_priority, 'Môi trường bất thường đã duy trì đủ thời gian; xem evidence và metrics.');\n    }\n    if (flow === 8) {\n        if (!number(p.empty_delay_seconds) || p.empty_delay_seconds < 0 || p.empty_delay_seconds > 86400)\n            return fail('INVALID_EMPTY_DELAY');\n        state.empty_since = t.occupancy_count === 0 ? (sameRules && old.empty_since ? old.empty_since : t.observed_at) : null;\n        const elapsed = state.empty_since ? (at - Date.parse(state.empty_since)) / 1000 : 0;\n        const ready = t.occupancy_count === 0 && elapsed >= p.empty_delay_seconds;\n        const interval = connected ? (old.power_w + t.power_w) / 2 * dt / 3600000 : 0;\n        state.power_w = t.power_w;\n        state.energy_kwh_observed = (old?.energy_kwh_observed ?? 0) + interval;\n        state.missing_seconds = (old?.missing_seconds ?? 0) + (old && !connected ? Math.max(0, dt) : 0);\n        condition('EMPTY_HIGH_POWER', ready && t.power_w >= s.high_power_w, 0, s.recovery_seconds, `Phòng vắng ${elapsed}s nhưng công suất ${t.power_w}W >= ${s.high_power_w}W`);\n        out.observations = { mode: t.occupancy_count > 0 ? 'OCCUPIED' : ready ? 'EMPTY_READY' : 'WAITING_EMPTY',\n            empty_seconds: elapsed, remaining_seconds: t.occupancy_count === 0 ? Math.max(0, p.empty_delay_seconds - elapsed) : null,\n            interval_kwh: interval, interval_seconds: connected ? dt : 0, interval_counted: connected,\n            energy_kwh_observed: state.energy_kwh_observed, missing_seconds: state.missing_seconds,\n            data_gap: !!old && !connected, energy_note: 'Ước tính hình thang, chỉ cộng khoảng có hai mẫu liên tục cùng run. Không phải tổng điện cả ngày.' };\n        if (ready)\n            proposal({ FAN: 'OFF', LIGHT: 'OFF' }, s.energy_priority, `Vắng liên tục ${elapsed}s; công suất đo được ${t.power_w}W.`);\n    }\n    if (flow === 9) {\n        if (!Array.isArray(c.schedules) || !c.room.timezone)\n            return fail('SCHEDULE_REQUIRED');\n        const seconds = (v) => { if (typeof v !== 'string' || !/^\\d{2}:\\d{2}(:\\d{2})?$/.test(v))\n            return NaN; const [h, m, s = 0] = v.split(':').map(Number); return h < 24 && m < 60 && s < 60 ? h * 3600 + m * 60 + s : NaN; };\n        if (c.schedules.some((x) => !Number.isInteger(x.weekday) || x.weekday < 0 || x.weekday > 6 ||\n            !Number.isFinite(seconds(x.starts_at)) || !Number.isFinite(seconds(x.ends_at)) || seconds(x.starts_at) >= seconds(x.ends_at)))\n            return fail('INVALID_SCHEDULE');\n        let parts;\n        try {\n            parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: c.room.timezone, weekday: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(at)).map(x => [x.type, x.value]));\n        }\n        catch {\n            return fail('INVALID_TIMEZONE');\n        }\n        const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday);\n        const second = Number(parts.hour) * 3600 + Number(parts.minute) * 60 + Number(parts.second);\n        const inside = c.schedules.some((x) => x.weekday === day && second >= seconds(x.starts_at) && second < seconds(x.ends_at));\n        const active = condition('AFTER_HOURS_ACTIVITY', !inside && (t.door_open || t.occupancy_count > 0), 0, s.security_recovery_seconds, `Ngoài lịch ${c.room.timezone}; cửa=${t.door_open}, số người=${t.occupancy_count}`);\n        out.observations = { within_schedule: inside, security_active: active, timezone: c.room.timezone,\n            local_time: `${parts.hour}:${parts.minute}:${parts.second}`, schedule_count: c.schedules.length };\n    }\n    return out;\n}\nconst c=$input.first().json;\nconst result=evaluate(c,9);\nif(result.status==='REJECTED')throw new Error(result.reason);\nreturn [{json:{flow:9,telemetry_id:c.telemetry.id,context_hash:c.context_hash,evaluation:result}}];"
       },
+      "id": "08e39f29-07c9-4ad1-9189-34eea66fc05f",
+      "name": "Danh gia WF9",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        1440,
-        180
+        944,
+        480
       ]
     },
     {
-      "id": "9bd8eae2-a539-4abf-aeda-301578b4112a",
-      "name": "Luu ket qua nguyen tu",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
       "parameters": {
         "method": "POST",
+        "url": "={{ $('Cau hinh').first().json.backend_base_url + '/duong-monitoring/commit' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.BACKEND_API_TOKEN ? 'Bearer ' + $env.BACKEND_API_TOKEN : '' }}"
+            }
+          ]
+        },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ $json }}",
-        "url": "={{ $('Cau hinh').first().json.backend_base_url + '/duong-monitoring/commit' }}",
         "options": {
           "timeout": 15000
         }
       },
+      "id": "bb820142-171c-45b2-9e6f-ed74003d1a4a",
+      "name": "Luu ket qua nguyen tu",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        1680,
-        180
-      ]
+        1184,
+        480
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
-      "id": "9cafbd7f-2e77-458e-824e-7e42830b9d65",
-      "name": "Gui email bo sung?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
       "parameters": {
         "conditions": {
           "options": {
@@ -196,29 +228,29 @@
         },
         "options": {}
       },
+      "id": "66355488-eb4f-4412-bbe1-bebcbe7f8590",
+      "name": "Gui email bo sung?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
       "position": [
-        1920,
-        180
+        1424,
+        480
       ]
     },
     {
-      "id": "08d869a1-f9ba-403d-9eec-71f06c3c98a1",
-      "name": "Soan email",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
       "parameters": {
         "jsCode": "const r=$input.first().json;\nconst to=$('Cau hinh').first().json.email_to;\nif(!to||!to.includes('@'))throw new Error('Điền email_to trong Cau hinh trước khi bật email.');\nreturn [{json:{to,subject:'[Smart Classroom][WF9] '+r.room_code+' - '+r.new_events.map(e=>e.recovered?'Phục hồi '+e.type:e.type).join(', '),\nmessage:r.new_events.map(e=>e.reason+'\\nThời gian: '+e.observed_at+'\\n'+JSON.stringify(e.evidence)).join('\\n\\n')}}];"
       },
+      "id": "5657c298-868d-4ed4-8696-ae1bdaa15468",
+      "name": "Soan email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        2160,
-        0
+        1664,
+        304
       ]
     },
     {
-      "id": "953bd84a-ad89-4fe4-9d47-103ade50308d",
-      "name": "Gui Gmail bo sung",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.2,
       "parameters": {
         "sendTo": "={{ $json.to }}",
         "subject": "={{ $json.subject }}",
@@ -226,55 +258,114 @@
         "message": "={{ $json.message }}",
         "options": {}
       },
+      "id": "515c5556-0641-4bd7-bb0f-0b51c73defdd",
+      "name": "Gui Gmail bo sung",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
       "position": [
-        2400,
-        0
+        1904,
+        304
       ],
-      "onError": "continueRegularOutput",
-      "disabled": true
+      "webhookId": "254ce052-1d62-45c5-8313-8da26a35e281",
+      "disabled": true,
+      "onError": "continueRegularOutput"
     },
     {
-      "id": "7c2657f8-3e8e-434c-abf7-c95cdfc62268",
-      "name": "Ket qua email",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
       "parameters": {
         "jsCode": "const mail=$input.first().json;return [{json:{...$('Luu ket qua nguyen tu').first().json,\nemail_status:mail.id&&!mail.error?'SENT':'FAILED_OR_UNCERTAIN',email_error:mail.error??null}}];"
       },
+      "id": "78c93883-79a0-43b5-b9dd-c93c58519cb9",
+      "name": "Ket qua email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        2640,
+        2144,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json:{...$input.first().json,email_status:'NOT_SENT'}}];"
+      },
+      "id": "cfd6116d-7787-4d02-8a38-f1b6fb22cae2",
+      "name": "Dau ra ban giao",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1664,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## WF9 — HOST READY, giữ logic của Dương\n- Backend URL lấy từ `BACKEND_BASE_URL`; không hardcode localhost.\n- Webhook nội bộ nhận `telemetry_id` từ WF01; `INTERNAL_WEBHOOK_TOKEN` có thể bật để bảo vệ.\n- Commit vẫn đi qua `/api/duong-monitoring/*`, giữ nguyên rule/state/proposal của bản gốc.\n- `new_events` được chuyển sang WF10; proposal chỉ được lưu, KHÔNG tự dispatch command.\n- Email vẫn là kênh phụ, bật bằng `MONITORING_EMAIL_ENABLED=true`; Gmail credential cấu hình trên n8n nếu dùng.\n",
+        "height": 300,
+        "width": 1040
+      },
+      "id": "9b213be2-ce6d-424c-9eec-f03db99d6465",
+      "name": "Doc truoc khi chay",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
         0
       ]
     },
     {
-      "id": "b421c3f7-f78d-45ef-b43f-65b304e9cb1b",
-      "name": "Dau ra ban giao",
+      "parameters": {
+        "jsCode": "const r=$input.first().json;\nconst events=Array.isArray(r.new_events)?r.new_events:[];\nreturn events.map(e=>({json:{\n  event_key:e.event_key,\n  dedup_key:e.dedup_key,\n  type:e.type,\n  severity:e.severity||'WARNING',\n  recovered:e.recovered===true,\n  device_id:e.device_id,\n  room_code:e.room_code,\n  observed_at:e.observed_at,\n  title:e.reason||e.type,\n  details:{source:e.source,telemetry_id:e.telemetry_id,evidence:e.evidence||{}}\n}}));"
+      },
+      "id": "ded58920-c0a4-43b5-bddd-ee0f2a2d8948",
+      "name": "Tao incident candidates",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "parameters": {
-        "jsCode": "return [{json:{...$input.first().json,email_status:'NOT_SENT'}}];"
-      },
       "position": [
-        2160,
-        300
+        1408,
+        768
       ]
     },
     {
-      "id": "5ee9df79-ac61-485b-b901-9d8d5c96d065",
-      "name": "Doc truoc khi chay",
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
       "parameters": {
-        "width": 1040,
-        "height": 300,
-        "content": "## WF9 — BẢN LOCAL CHỜ REVIEW CONTRACT\nCài backend/module + migration trong gói này trước. API /duong-monitoring/* là API mới đề xuất, không phải API sẵn có của nhóm.\nCau hinh: backend_base_url; email_enabled=false mặc định; email_to khi cần. Chọn Gmail credential của bạn. Không kèm secrets.\nBackend API_TOKEN bật: chọn Header Auth trên cả 3 HTTP Request node.\nManual lấy telemetry mới nhất đã lưu; mẫu quá 30s bị từ chối. Webhook demo và WF01 nhận {telemetry_id}.\nState/proposal/event được lưu thật qua một transaction. Events chờ WF10; WF03 chưa đọc proposal. Không tự tạo command/ACK/incident.\nEmail là kênh bổ sung cho transition mới, tắt retry tự động; kiểm tra Executions khi lỗi. Mất response sau gửi có thể gây trạng thái chưa chắc chắn; không cam kết exactly-once email.\nWebhook chỉ dùng demo local; phải thêm xác thực trước khi public."
+        "method": "POST",
+        "url": "={{ (($env.N8N_PUBLIC_URL || $env.WEBHOOK_URL || '').replace(/\\/+$/, '')) + '/webhook/incident-candidate' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Smart-Classroom-Internal",
+              "value": "={{ $env.INTERNAL_WEBHOOK_TOKEN || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 10000
+        }
       },
+      "id": "d417e18c-1cc1-4fa9-9dce-82b15f51eaa6",
+      "name": "Gui incident sang WF10",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        500,
-        -300
-      ]
+        1632,
+        768
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 750,
+      "onError": "continueRegularOutput"
     }
   ],
+  "pinData": {},
   "connections": {
     "Chay thu thu cong": {
       "main": [
@@ -389,6 +480,11 @@
             "node": "Gui email bo sung?",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Tao incident candidates",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -432,11 +528,29 @@
           }
         ]
       ]
+    },
+    "Tao incident candidates": {
+      "main": [
+        [
+          {
+            "node": "Gui incident sang WF10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "binaryMode": "separate"
   },
-  "pinData": {}
+  "versionId": "386bd0e9-12ac-4c1c-9e04-0fcbc120343c",
+  "meta": {
+    "instanceId": "74397114e206792390d2318630c9cb2cd8c3ad6e9328254d2194767fe90a0e8d"
+  },
+  "nodeGroups": [],
+  "id": "RIwvYQte1ZGoZim8",
+  "tags": []
 }

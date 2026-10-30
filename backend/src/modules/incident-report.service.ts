@@ -1,6 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 const SEVERITIES=['INFO','WARNING','CRITICAL'];
 const STATUSES=['OPEN','ACKNOWLEDGED','RESOLVED'];
@@ -20,29 +25,468 @@ export class IncidentReportService {
   const rows=await this.db.query(`SELECT i.*,d.code AS device_code,r.code AS room_code FROM incidents i LEFT JOIN devices d ON d.id=i.device_id LEFT JOIN rooms r ON r.id=COALESCE(i.room_id,d.room_id) ${where.length?'WHERE '+where.join(' AND '):''} ORDER BY i.last_seen DESC LIMIT 200`,args);return rows.map((row:any)=>({...row,title:normalizedIncidentTitle(row.title,row.type,row.room_code||'phòng học')}));
  }
  async detailIncident(id:string){const [row]=await this.db.query(`SELECT i.*,d.code AS device_code,r.code AS room_code FROM incidents i LEFT JOIN devices d ON d.id=i.device_id LEFT JOIN rooms r ON r.id=COALESCE(i.room_id,d.room_id) WHERE i.id=$1`,[id]);if(!row)throw new NotFoundException('Không tìm thấy sự cố.');const timeline=await this.db.query(`SELECT id,event_type,payload,created_at FROM incident_timeline WHERE incident_id=$1 ORDER BY created_at`,[id]);return {...row,title:normalizedIncidentTitle(row.title,row.type,row.room_code||'phòng học'),timeline};}
- async upsertIncident(b:any){
-  const rawType=String(b.type||'').trim().toUpperCase().replace(/[\s-]+/g,'_');
-  const aliases:Record<string,string>={HOT:'HIGH_TEMPERATURE',TEMPERATURE:'HIGH_TEMPERATURE',HUMIDITY:'HIGH_HUMIDITY',CO2:'HIGH_CO2',CO2_HIGH:'HIGH_CO2',POWER_WASTE:'ENERGY_WASTE',DOOR_AFTER_HOURS:'AFTER_HOURS_DOOR',OFFLINE:'DEVICE_OFFLINE',INVALID_TELEMETRY:'INVALID_PAYLOAD'};
-  const type=aliases[rawType]||rawType;const rawSeverity=String(b.severity||'').trim().toUpperCase();const severity=({LOW:'INFO',MINOR:'INFO',MEDIUM:'WARNING',HIGH:'CRITICAL',SEVERE:'CRITICAL'} as Record<string,string>)[rawSeverity]||rawSeverity;
-  if(!INCIDENT_TYPES.includes(type))throw new BadRequestException('Incident type không hợp lệ.');
-  if(!SEVERITIES.includes(severity))throw new BadRequestException('Severity không hợp lệ.');
-  const [d]=b.device_id?await this.db.query(`SELECT d.*,r.code room_code FROM devices d JOIN rooms r ON r.id=d.room_id WHERE d.code=$1 OR d.id::text=$1 LIMIT 1`,[b.device_id]):[];
-  if(b.device_id&&!d)throw new NotFoundException('Không tìm thấy thiết bị.');
-  const [roomRow]=b.room?await this.db.query(`SELECT id,code FROM rooms WHERE code=$1 OR id::text=$1 LIMIT 1`,[b.room]):[];
-  if(b.room&&!roomRow)throw new NotFoundException('Không tìm thấy phòng.');
-  if(d&&roomRow&&d.room_id!==roomRow.id)throw new BadRequestException('Thiết bị không thuộc phòng đã gửi.');
-  const roomId=d?.room_id||roomRow?.id;if(!roomId)throw new BadRequestException('Candidate cần device_id hoặc room hợp lệ.');
-  const room=roomRow?.code||d?.room_code;const title=normalizedIncidentTitle(b.title,type,room);const key=`${room}:${type}:${d?.id||'ROOM'}`;
-  return this.db.transaction(async q=>{
-   await q.query('SELECT pg_advisory_xact_lock(hashtext($1))',[key]);
-   const [existing]=await q.query(`SELECT * FROM incidents WHERE dedup_key=$1 AND status<>'RESOLVED' FOR UPDATE`,[key]);
-   if(existing){const [updated]=await q.query(`UPDATE incidents SET severity=$2,title=$3,details=$4::jsonb,count=count+1,last_seen=COALESCE($5::timestamptz,now()) WHERE id=$1 RETURNING *`,[existing.id,severity,title,JSON.stringify(b.details||{}),b.observed_at||null]);await q.query(`INSERT INTO incident_timeline(id,incident_id,event_type,payload) VALUES($1,$2,'REPEATED',$3::jsonb)`,[randomUUID(),existing.id,JSON.stringify({type,count:updated.count})]);if(d?.id||existing.device_id)await q.query(`INSERT INTO device_events(id,device_id,event_type,payload) VALUES($1,$2,'INCIDENT_REPEATED',$3::jsonb)`,[randomUUID(),d?.id||existing.device_id,JSON.stringify({incident_id:existing.id,type})]);return {...updated,duplicate:true};}
-   const [created]=await q.query(`INSERT INTO incidents(id,device_id,room_id,dedup_key,type,severity,title,details,first_seen,last_seen) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,COALESCE($9::timestamptz,now()),COALESCE($9::timestamptz,now())) RETURNING *`,[randomUUID(),d?.id||null,roomId,key,type,severity,title,JSON.stringify(b.details||{}),b.observed_at||null]);
-   await q.query(`INSERT INTO app_notifications(id,incident_id,kind,title,body) VALUES($1,$2,'INCIDENT_OPENED',$3,$4)`,[randomUUID(),created.id,created.title,`${created.severity}: ${created.type}`]);
-   await q.query(`INSERT INTO incident_timeline(id,incident_id,event_type,payload) VALUES($1,$2,'OPENED',$3::jsonb)`,[randomUUID(),created.id,JSON.stringify({type,severity,title})]);
-   if(d)await q.query(`INSERT INTO device_events(id,device_id,event_type,payload) VALUES($1,$2,'INCIDENT_OPENED',$3::jsonb)`,[randomUUID(),d.id,JSON.stringify({incident_id:created.id,type,severity,title})]);return {...created,duplicate:false};
+ async upsertIncident(b: any) {
+  const rawType = String(b.type || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+
+  const aliases: Record<string, string> = {
+    HOT: 'HIGH_TEMPERATURE',
+    TEMPERATURE: 'HIGH_TEMPERATURE',
+    HUMIDITY: 'HIGH_HUMIDITY',
+    CO2: 'HIGH_CO2',
+    CO2_HIGH: 'HIGH_CO2',
+    POWER_WASTE: 'ENERGY_WASTE',
+    DOOR_AFTER_HOURS: 'AFTER_HOURS_DOOR',
+    OFFLINE: 'DEVICE_OFFLINE',
+    INVALID_TELEMETRY: 'INVALID_PAYLOAD',
+    COMMAND_FAILED: 'COMMAND_FAILURE',
+    COMMAND_TIMEOUT: 'COMMAND_FAILURE',
+    LATE_ACK: 'COMMAND_FAILURE',
+  };
+
+  const type = aliases[rawType] || rawType;
+  const rawSeverity = String(b.severity || '').trim().toUpperCase();
+
+  const severity =
+    ({
+      LOW: 'INFO',
+      MINOR: 'INFO',
+      MEDIUM: 'WARNING',
+      HIGH: 'CRITICAL',
+      SEVERE: 'CRITICAL',
+    } as Record<string, string>)[rawSeverity] || rawSeverity;
+
+  if (!INCIDENT_TYPES.includes(type)) {
+    throw new BadRequestException('Incident type không hợp lệ.');
+  }
+
+  if (!SEVERITIES.includes(severity)) {
+    throw new BadRequestException('Severity không hợp lệ.');
+  }
+
+  const recovered = b.recovered === true;
+  const eventKey = b.event_key?.trim() || null;
+
+  if (recovered && (!eventKey || !b.observed_at)) {
+    throw new BadRequestException(
+      'Phục hồi cần event_key và observed_at.',
+    );
+  }
+
+  const time = b.observed_at ? Date.parse(b.observed_at) : Date.now();
+
+  if (!Number.isFinite(time) || time > Date.now() + 60000) {
+    throw new BadRequestException(
+      'observed_at không hợp lệ hoặc vượt quá 60 giây trong tương lai.',
+    );
+  }
+
+  const observedAt = new Date(time).toISOString();
+
+  const [device] = b.device_id
+    ? await this.db.query(
+        `SELECT d.*, r.code room_code
+         FROM devices d
+         JOIN rooms r ON r.id=d.room_id
+         WHERE d.code=$1 OR d.id::text=$1
+         LIMIT 1`,
+        [b.device_id],
+      )
+    : [];
+
+  if (b.device_id && !device) {
+    throw new NotFoundException('Không tìm thấy thiết bị.');
+  }
+
+  const [roomRow] = b.room
+    ? await this.db.query(
+        `SELECT id,code
+         FROM rooms
+         WHERE code=$1 OR id::text=$1
+         LIMIT 1`,
+        [b.room],
+      )
+    : [];
+
+  if (b.room && !roomRow) {
+    throw new NotFoundException('Không tìm thấy phòng.');
+  }
+
+  if (device && roomRow && device.room_id !== roomRow.id) {
+    throw new BadRequestException(
+      'Thiết bị không thuộc phòng đã gửi.',
+    );
+  }
+
+  const roomId = device?.room_id || roomRow?.id;
+
+  if (!roomId) {
+    throw new BadRequestException(
+      'Candidate cần device_id hoặc room hợp lệ.',
+    );
+  }
+
+  const room = roomRow?.code || device?.room_code;
+  const title = normalizedIncidentTitle(b.title, type, room);
+
+  const hash = (value: string) =>
+    createHash('sha256').update(value).digest('hex');
+
+  // Khóa sự cố được giới hạn theo phòng, thiết bị và loại.
+  const key = b.dedup_key
+    ? 'V3:' +
+      hash(
+        JSON.stringify([
+          roomId,
+          device?.id || null,
+          type,
+          b.dedup_key,
+        ]),
+      )
+    : `${room}:${type}:${device?.id || 'ROOM'}`;
+
+  // Sắp xếp khóa object để thứ tự thuộc tính JSON
+  // không làm thay đổi fingerprint.
+  function canonical(value: any): any {
+    if (Array.isArray(value)) {
+      return value.map(canonical);
+    }
+
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.keys(value)
+          .sort()
+          .map(k => [k, canonical(value[k])]),
+      );
+    }
+
+    return value;
+  }
+
+  const fingerprint = hash(
+    JSON.stringify(
+      canonical({
+        key,
+        type,
+        severity,
+        title,
+        recovered,
+        observed_at: b.observed_at ? observedAt : null,
+        details: b.details || {},
+      }),
+    ),
+  );
+
+  return this.db.transaction(async q => {
+    // Khóa theo sự kiện để hai request đồng thời
+    // không cùng xử lý một event_key.
+    if (eventKey) {
+      await q.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        ['incident-event:' + eventKey],
+      );
+
+      const [receipt] = await q.query(
+        `SELECT *
+         FROM incident_event_receipts
+         WHERE event_key=$1`,
+        [eventKey],
+      );
+
+      if (receipt) {
+        if (receipt.fingerprint !== fingerprint) {
+          throw new ConflictException(
+            'event_key đã được dùng với nội dung khác.',
+          );
+        }
+
+        // Trả lại kết quả đã lưu, không tăng count,
+        // không tạo thêm timeline hoặc notification.
+        return {
+          ...receipt.result,
+          duplicate: true,
+          event_duplicate: true,
+        };
+      }
+    }
+
+    await q.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1))',
+      ['incident-signal:' + key],
+    );
+
+    const [existing] = await q.query(
+      `SELECT *
+       FROM incidents
+       WHERE dedup_key=$1 AND status<>'RESOLVED'
+       FOR UPDATE`,
+      [key],
+    );
+
+    const [latest] = await q.query(
+      `SELECT *
+       FROM incidents
+       WHERE dedup_key=$1
+       ORDER BY last_seen DESC
+       LIMIT 1`,
+      [key],
+    );
+
+    // Bao gồm cả tín hiệu phục hồi đến trước cảnh báo.
+    const [lastEvent] = await q.query(
+      `SELECT result
+       FROM incident_event_receipts
+       WHERE result->>'signal_key'=$1
+       ORDER BY (result->>'observed_at')::timestamptz DESC
+       LIMIT 1`,
+      [key],
+    );
+
+    const watermark = Math.max(
+      lastEvent
+        ? Date.parse(lastEvent.result.observed_at)
+        : -Infinity,
+      latest
+        ? new Date(latest.last_seen).getTime()
+        : -Infinity,
+      latest?.resolved_at
+        ? new Date(latest.resolved_at).getTime()
+        : -Infinity,
+    );
+
+    async function finish(
+      row: any,
+      action: string,
+      extra: any = {},
+    ) {
+      const result = {
+        ...(row || {}),
+        ok: true,
+        incident_id: row?.id || null,
+        event_key: eventKey,
+        signal_key: key,
+        observed_at: observedAt,
+        event_action: action,
+        recovered,
+        duplicate: false,
+        event_duplicate: false,
+        ...extra,
+      };
+
+      if (eventKey) {
+        await q.query(
+          `INSERT INTO incident_event_receipts
+             (event_key,fingerprint,incident_id,result)
+           VALUES($1,$2,$3,$4::jsonb)`,
+          [
+            eventKey,
+            fingerprint,
+            row?.id || null,
+            JSON.stringify(result),
+          ],
+        );
+      }
+
+      return result;
+    }
+
+    // Không để sự kiện đến chậm đảo ngược trạng thái mới.
+    if (time <= watermark) {
+      return finish(
+        existing || latest,
+        'IGNORED_STALE',
+        { ignored: true },
+      );
+    }
+
+    // Phục hồi mà không có sự cố mở:
+    // ghi nhận sự kiện nhưng không tạo sự cố mới.
+    if (recovered && !existing) {
+      return finish(
+        latest,
+        'NO_OPEN_INCIDENT',
+        { ignored: true },
+      );
+    }
+
+    if (recovered) {
+      const [row] = await q.query(
+        `WITH updated AS (
+           UPDATE incidents
+           SET status='RESOLVED',
+               resolved_at=$2::timestamptz,
+               last_seen=$2::timestamptz
+           WHERE id=$1
+           RETURNING *
+         )
+         SELECT * FROM updated`,
+        [existing.id, observedAt],
+      );
+
+      await q.query(
+        `INSERT INTO incident_timeline
+           (id,incident_id,event_type,payload)
+         VALUES($1,$2,'RECOVERED',$3::jsonb)`,
+        [
+          randomUUID(),
+          row.id,
+          JSON.stringify({
+            event_key: eventKey,
+            observed_at: observedAt,
+            details: b.details || {},
+          }),
+        ],
+      );
+
+      if (device) {
+        await q.query(
+          `INSERT INTO device_events
+             (id,device_id,event_type,payload)
+           VALUES($1,$2,'INCIDENT_RESOLVED',$3::jsonb)`,
+          [
+            randomUUID(),
+            device.id,
+            JSON.stringify({
+              incident_id: row.id,
+              type,
+              event_key: eventKey,
+            }),
+          ],
+        );
+      }
+
+      return finish(row, 'RESOLVED');
+    }
+
+    if (existing) {
+      const [row] = await q.query(
+        `WITH updated AS (
+           UPDATE incidents
+           SET severity=$2,
+               title=$3,
+               details=$4::jsonb,
+               count=count+1,
+               last_seen=$5::timestamptz
+           WHERE id=$1
+           RETURNING *
+         )
+         SELECT * FROM updated`,
+        [
+          existing.id,
+          severity,
+          title,
+          JSON.stringify(b.details || {}),
+          observedAt,
+        ],
+      );
+
+      await q.query(
+        `INSERT INTO incident_timeline
+           (id,incident_id,event_type,payload)
+         VALUES($1,$2,'REPEATED',$3::jsonb)`,
+        [
+          randomUUID(),
+          row.id,
+          JSON.stringify({
+            type,
+            count: row.count,
+            event_key: eventKey,
+          }),
+        ],
+      );
+
+      if (device) {
+        await q.query(
+          `INSERT INTO device_events
+             (id,device_id,event_type,payload)
+           VALUES($1,$2,'INCIDENT_REPEATED',$3::jsonb)`,
+          [
+            randomUUID(),
+            device.id,
+            JSON.stringify({
+              incident_id: row.id,
+              type,
+            }),
+          ],
+        );
+      }
+
+      return finish(row, 'UPDATED', { duplicate: true });
+    }
+
+    const [row] = await q.query(
+      `INSERT INTO incidents
+         (id,device_id,room_id,dedup_key,type,severity,
+          title,details,first_seen,last_seen)
+       VALUES(
+         $1,$2,$3,$4,$5,$6,$7,$8::jsonb,
+         $9::timestamptz,$9::timestamptz
+       )
+       RETURNING *`,
+      [
+        randomUUID(),
+        device?.id || null,
+        roomId,
+        key,
+        type,
+        severity,
+        title,
+        JSON.stringify(b.details || {}),
+        observedAt,
+      ],
+    );
+
+    await q.query(
+      `INSERT INTO app_notifications
+         (id,incident_id,kind,title,body)
+       VALUES($1,$2,'INCIDENT_OPENED',$3,$4)`,
+      [
+        randomUUID(),
+        row.id,
+        row.title,
+        `${row.severity}: ${row.type}`,
+      ],
+    );
+
+    await q.query(
+      `INSERT INTO incident_timeline
+         (id,incident_id,event_type,payload)
+       VALUES($1,$2,'OPENED',$3::jsonb)`,
+      [
+        randomUUID(),
+        row.id,
+        JSON.stringify({
+          type,
+          severity,
+          title,
+          event_key: eventKey,
+        }),
+      ],
+    );
+
+    if (device) {
+      await q.query(
+        `INSERT INTO device_events
+           (id,device_id,event_type,payload)
+         VALUES($1,$2,'INCIDENT_OPENED',$3::jsonb)`,
+        [
+          randomUUID(),
+          device.id,
+          JSON.stringify({
+            incident_id: row.id,
+            type,
+            severity,
+            title,
+          }),
+        ],
+      );
+    }
+
+    return finish(row, 'OPENED');
   });
- }
+}
  notifications(){return this.db.query(`SELECT n.*,i.status incident_status,i.severity FROM app_notifications n JOIN incidents i ON i.id=n.incident_id ORDER BY n.created_at DESC LIMIT 100`);}
  async readNotification(id:string){const [n]=await this.db.query(`UPDATE app_notifications SET read_at=COALESCE(read_at,now()) WHERE id=$1 RETURNING *`,[id]);if(!n)throw new NotFoundException('Không tìm thấy thông báo.');return n;}
  async updateIncident(id:string,b:any){if(b.status&&!STATUSES.includes(b.status))throw new BadRequestException('Trạng thái sự cố không hợp lệ.');if(b.severity&&!SEVERITIES.includes(b.severity))throw new BadRequestException('Mức độ sự cố không hợp lệ.');

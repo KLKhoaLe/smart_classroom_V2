@@ -2,58 +2,177 @@
   "name": "11_DAILY_REPORT",
   "nodes": [
     {
-      "parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "5 0 * * *"}]}},
-      "id": "dbf07119-4742-4fd2-9390-a3b37cdd1111",
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "5 0 * * *"
+            }
+          ]
+        }
+      },
+      "id": "b18e544d-7b50-4b7e-bf75-ddb3ffb435c8",
       "name": "Daily at 00:05 local",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [-620, 0]
-    },
-    {
-      "parameters": {"url": "http://host.docker.internal:3001/api/rooms", "sendHeaders": false, "options": {"timeout": 10000}},
-      "id": "72c505b7-6be4-4d19-b1e4-884fb8fc1111",
-      "name": "List Rooms",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-380, 0]
+      "position": [
+        0,
+        0
+      ]
     },
     {
       "parameters": {
-        "mode": "runOnceForAllItems",
+        "url": "={{ (($env.BACKEND_BASE_URL || 'https://smart-classroom-backend-allm.onrender.com').replace(/\\/+$/, '')) + '/api/rooms' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.BACKEND_API_TOKEN ? 'Bearer ' + $env.BACKEND_API_TOKEN : '' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "28163091-0f0e-4e36-bc1e-bb74ce519409",
+      "name": "List Rooms",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
         "jsCode": "const all=$input.all();const rooms=all.flatMap(i=>Array.isArray(i.json)?i.json:[i.json]).filter(r=>r&&r.code);return rooms.map(r=>({json:{room:r.code}}));"
       },
-      "id": "e66fe5d1-82d6-4956-a8dd-ef93314d1111",
+      "id": "d0114aa8-0adf-4d2b-8a44-b2eeed00d0b6",
       "name": "One Item per Room",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-140, 0]
+      "position": [
+        480,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'http://host.docker.internal:3001/api/reports/daily/' + encodeURIComponent($json.room) }}",
+        "url": "={{ (($env.BACKEND_BASE_URL || 'https://smart-classroom-backend-allm.onrender.com').replace(/\\/+$/, '')) + '/api/reports/daily/' + encodeURIComponent($json.room) }}",
         "sendHeaders": true,
-        "headerParameters": {"parameters": [{"name": "Content-Type", "value": "application/json"}]},
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.BACKEND_API_TOKEN ? 'Bearer ' + $env.BACKEND_API_TOKEN : '' }}"
+            }
+          ]
+        },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={}",
-        "options": {"timeout": 30000}
+        "options": {
+          "timeout": 30000
+        }
       },
-      "id": "5b023f2f-b5a2-4ea3-8cb5-b51a95ea1111",
+      "id": "d42f29fc-41ba-4eac-a915-645601bad22a",
       "name": "Aggregate and Save Daily Report",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [120, 0]
+      "position": [
+        752,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "report-daily-now",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "4acf0638-c320-4e9b-8563-dbd236a7abdf",
+      "name": "Run Daily Report Now",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        112,
+        240
+      ],
+      "webhookId": "f0a80908-210e-4444-8c6b-27f69fa9d6a4"
     }
   ],
+  "pinData": {},
   "connections": {
-    "Daily at 00:05 local": {"main": [[{"node": "List Rooms", "type": "main", "index": 0}]]},
-    "List Rooms": {"main": [[{"node": "One Item per Room", "type": "main", "index": 0}]]},
-    "One Item per Room": {"main": [[{"node": "Aggregate and Save Daily Report", "type": "main", "index": 0}]]}
+    "Daily at 00:05 local": {
+      "main": [
+        [
+          {
+            "node": "List Rooms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Rooms": {
+      "main": [
+        [
+          {
+            "node": "One Item per Room",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One Item per Room": {
+      "main": [
+        [
+          {
+            "node": "Aggregate and Save Daily Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Daily Report Now": {
+      "main": [
+        [
+          {
+            "node": "List Rooms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "active": false,
-  "settings": {"executionOrder": "v1", "timezone": "Asia/Ho_Chi_Minh"},
-  "versionId": "b682b14e-2d4e-442f-86d6-1d91a0d71111",
-  "meta": {"templateCredsSetupCompleted": false},
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "5aa3a386-6292-4f55-8dd4-49d6eb620024",
+  "meta": {
+    "instanceId": "74397114e206792390d2318630c9cb2cd8c3ad6e9328254d2194767fe90a0e8d"
+  },
+  "nodeGroups": [],
+  "id": "5ruKQh3zhNNCHRpw",
   "tags": []
 }

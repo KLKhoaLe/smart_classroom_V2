@@ -1,0 +1,216 @@
+{
+  "name": "10_INCIDENT_MANAGEMENT_V3",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "incident-candidate",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "7fde00a3-5243-4356-85f8-be39831116fa",
+      "name": "Incident Candidate Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        112
+      ],
+      "webhookId": "incident-candidate-v3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst expectedInternal=String((typeof $env!=='undefined'?$env.INTERNAL_WEBHOOK_TOKEN:'')||'').trim();\nconst receivedInternal=String(input.headers?.['x-smart-classroom-internal']||'').trim();\nif(expectedInternal&&receivedInternal!==expectedInternal)throw new Error('INTERNAL_WEBHOOK_UNAUTHORIZED');\nconst body = input.body ?? input;\nconst isObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);\ntry {\n  if (!isObject(body)) throw new Error('Body phải là JSON object.');\n  const x = isObject(body.incident_candidate) ? body.incident_candidate : body;\n  const aliases = {\n    HOT: 'HIGH_TEMPERATURE', TEMPERATURE: 'HIGH_TEMPERATURE',\n    HUMIDITY: 'HIGH_HUMIDITY', CO2: 'HIGH_CO2', CO2_HIGH: 'HIGH_CO2',\n    POWER_WASTE: 'ENERGY_WASTE', DOOR_AFTER_HOURS: 'AFTER_HOURS_DOOR',\n    OFFLINE: 'DEVICE_OFFLINE', INVALID_TELEMETRY: 'INVALID_PAYLOAD',\n    COMMAND_FAILED: 'COMMAND_FAILURE', COMMAND_TIMEOUT: 'COMMAND_FAILURE',\n    LATE_ACK: 'COMMAND_FAILURE'\n  };\n  const rawType = String(x.type || '').trim().toUpperCase().replace(/[\\s-]+/g, '_');\n  const type = aliases[rawType] || rawType;\n  const types = ['SENSOR_ANOMALY', 'HIGH_TEMPERATURE', 'HIGH_HUMIDITY', 'HIGH_CO2', 'ENERGY_WASTE', 'AFTER_HOURS_DOOR', 'DEVICE_OFFLINE', 'COMMAND_FAILURE', 'INVALID_PAYLOAD', 'CUSTOM'];\n  if (!types.includes(type)) throw new Error('Loại sự cố không hợp lệ: ' + type);\n  const rawSeverity = String(x.severity || 'WARNING').trim().toUpperCase();\n  const severity = ({LOW: 'INFO', MINOR: 'INFO', MEDIUM: 'WARNING', HIGH: 'CRITICAL', SEVERE: 'CRITICAL'})[rawSeverity] || rawSeverity;\n  if (!['INFO', 'WARNING', 'CRITICAL'].includes(severity)) throw new Error('Severity không hợp lệ.');\n  function requiredText(value, name, max) {\n    if (typeof value !== 'string' || !value.trim() || value.trim().length > max) throw new Error(name + ' phải là chuỗi không rỗng, tối đa ' + max + ' ký tự.');\n    return value.trim();\n  }\n  const event_key = requiredText(x.event_key, 'event_key', 250);\n  const dedup_key = requiredText(x.dedup_key, 'dedup_key', 180);\n  const device = x.device_id ?? x.device_code;\n  const room = x.room ?? x.room_code;\n  if (!device && !room) throw new Error('Cần device_id hoặc room.');\n  if (x.recovered !== undefined && typeof x.recovered !== 'boolean') throw new Error('recovered phải là boolean.');\n  const observed_at = x.observed_at;\n  if (typeof observed_at !== 'string' || !/^\\d{4}-\\d\\d-\\d\\dT.*(?:Z|[+-]\\d\\d:\\d\\d)$/.test(observed_at) || !Number.isFinite(Date.parse(observed_at))) throw new Error('observed_at phải là ISO timestamp có múi giờ.');\n  if (Date.parse(observed_at) > Date.now() + 60000) throw new Error('observed_at vượt quá 60 giây trong tương lai.');\n  const details = x.details ?? x.evidence ?? {};\n  if (!isObject(details)) throw new Error('details/evidence phải là object.');\n  const payload = {\n    type, severity,\n    title: requiredText(x.title ?? x.reason ?? type, 'title', 250),\n    event_key, dedup_key,\n    recovered: x.recovered === true,\n    observed_at: new Date(observed_at).toISOString(),\n    details\n  };\n  if (device) payload.device_id = requiredText(device, 'device_id', 100);\n  if (room) payload.room = requiredText(room, 'room', 100);\n  return [{json: {valid: true, payload}}];\n} catch (error) {\n  return [{json: {\n    valid: false,\n    http_status: 400,\n    response_body: {\n      workflow_version: 'V3',\n      ok: false,\n      error_type: 'INVALID_CANDIDATE',\n      message: error.message\n    }\n  }}];\n}"
+      },
+      "id": "567d9ad3-affb-4615-bcc9-48fbdd0c76e4",
+      "name": "Normalize Candidate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "candidate-valid",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b04cc76b-a600-4dc7-b733-bec2a8098719",
+      "name": "Candidate Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ (($env.BACKEND_BASE_URL || 'https://smart-classroom-backend-allm.onrender.com').replace(/\\/+$/, '')) + '/api/incidents' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.BACKEND_API_TOKEN ? 'Bearer ' + $env.BACKEND_API_TOKEN : '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "24f3bd77-15ae-4011-9b43-ea078524ac28",
+      "name": "Upsert Incident and Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst candidate = $('Normalize Candidate').first().json.payload;\nfunction fail(code, type, message) {\n  return [{json: {\n    http_status: code,\n    response_body: {\n      workflow_version: 'V3',\n      ok: false,\n      event_key: candidate.event_key,\n      error_type: type,\n      message\n    }\n  }}];\n}\nif (response.error || !Number.isInteger(response.statusCode)) return fail(503, 'BACKEND_UNAVAILABLE', 'Chưa xác nhận được kết quả lưu sự kiện. Khi thử lại, giữ nguyên event_key và nội dung.');\nlet result = response.body;\nif (typeof result === 'string') {\n  try { result = JSON.parse(result); } catch { result = null; }\n}\nif (response.statusCode < 200 || response.statusCode >= 300) {\n  const code = response.statusCode >= 400 && response.statusCode <= 599 ? response.statusCode : 502;\n  const message = Array.isArray(result?.message) ? result.message.join(' | ') : typeof result?.message === 'string' ? result.message : 'Backend từ chối sự kiện.';\n  return fail(code, 'BACKEND_REJECTED', message);\n}\nconst actions = ['OPENED', 'UPDATED', 'RESOLVED', 'IGNORED_STALE', 'NO_OPEN_INCIDENT'];\nif (result?.ok !== true || result.event_key !== candidate.event_key || !actions.includes(result.event_action)) return fail(502, 'INVALID_BACKEND_RESPONSE', 'Backend response không đúng contract incidents V3.');\nif (['OPENED', 'UPDATED', 'RESOLVED'].includes(result.event_action) && !result.incident_id) return fail(502, 'INVALID_BACKEND_RESPONSE', 'Backend thiếu incident_id.');\nreturn [{json: {\n  http_status: 200,\n  response_body: {\n    ...result,\n    workflow_version: 'V3',\n    processed_by: 'WF10',\n    message: result.event_duplicate === true\n      ? 'Sự kiện đã được xử lý trước đó. Đây là kết quả đã lưu, không phải truy vấn trạng thái sự cố mới nhất.'\n      : 'Backend đã xử lý sự kiện. Xem event_action để biết kết quả.'\n  }\n}}];"
+      },
+      "id": "fd646565-ce4a-471a-99cc-05f3f71c01de",
+      "name": "Check Backend Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.response_body) }}",
+        "options": {
+          "responseCode": "={{ $json.http_status }}"
+        }
+      },
+      "id": "38dd81c1-4d2a-483e-a7ae-decfa62863ae",
+      "name": "Respond Incident Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        480,
+        112
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Incident Candidate Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Candidate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Candidate": {
+      "main": [
+        [
+          {
+            "node": "Candidate Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Candidate Valid?": {
+      "main": [
+        [
+          {
+            "node": "Upsert Incident and Notify",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Incident Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Incident and Notify": {
+      "main": [
+        [
+          {
+            "node": "Check Backend Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Backend Result": {
+      "main": [
+        [
+          {
+            "node": "Respond Incident Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "b08948b5-3e68-437d-a353-1bc8a509f47d",
+  "meta": {
+    "instanceId": "74397114e206792390d2318630c9cb2cd8c3ad6e9328254d2194767fe90a0e8d"
+  },
+  "nodeGroups": [],
+  "id": "2txyUKGxkCMmOtL0",
+  "tags": []
+}
