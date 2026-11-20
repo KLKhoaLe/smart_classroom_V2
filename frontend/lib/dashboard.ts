@@ -25,10 +25,21 @@ export type Device = {
   states: DeviceState[];
 };
 
+export type DecisionWeather = {
+  source: 'open-meteo' | 'demo-dry' | 'demo-humid' | 'unavailable';
+  indoor_dew: number | null;
+  outdoor_dew: number | null;
+  observed_at: string | null;
+  strategy: 'ventilate' | 'dehumidify' | 'indoor_policy';
+};
+
 export type DashboardData = {
   devices: Device[];
   stats: { telemetry_count: number; pending_commands: number; open_incidents: number };
-  decisions: { id: string; source: string; reason: string; created_at: string }[];
+  decisions: {
+    id: string; device_code?: string; source: string; reason: string; created_at: string;
+    evidence?: { actuator_levels?: { FAN?: number; LIGHT?: number }; weather?: DecisionWeather };
+  }[];
   manual_enabled: boolean;
   manual_levels_enabled?: boolean;
   server_time?: string;

@@ -495,7 +495,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://unwoven-partition-cadet.ngrok-free.dev/webhook/flow02-decision",
+        "url": "={{ (($env.N8N_PUBLIC_URL || $env.WEBHOOK_URL || '').replace(/\\/+$/, '')) + '/webhook/flow02-decision' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

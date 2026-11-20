@@ -1,10 +1,11 @@
 const test=require('node:test');const assert=require('node:assert/strict');const {randomUUID}=require('node:crypto');const {PGlite}=require('@electric-sql/pglite');
 const {InitialSchema1792200000000}=require('../dist/database/migrations/1792200000000-InitialSchema');
 const {IncidentsReportsV11792500000000}=require('../dist/database/migrations/1792500000000-IncidentsReportsV1');
+const {IncidentEventReceiptsV31792800000000}=require('../dist/database/migrations/1792800000000-IncidentEventReceiptsV3');
 const {seed}=require('../dist/database/seed');const {IncidentReportService}=require('../dist/modules/incident-report.service');
 function wrap(pg){return {query:async(sql,args)=>{if(args===undefined)return (await pg.exec(sql)).at(-1)?.rows||[];return (await pg.query(sql,args)).rows;},transaction:fn=>pg.transaction(tx=>fn(wrap(tx)))};}
 test('WF10 incident dedup, normalized lifecycle, assignment, timeline and notification',async()=>{
- const pg=new PGlite(),db=wrap(pg);try{await new InitialSchema1792200000000().up(db);await new IncidentsReportsV11792500000000().up(db);await seed(db);const svc=new IncidentReportService(db);
+ const pg=new PGlite(),db=wrap(pg);try{await new InitialSchema1792200000000().up(db);await new IncidentsReportsV11792500000000().up(db);await new IncidentEventReceiptsV31792800000000().up(db);await seed(db);const svc=new IncidentReportService(db);
   const body={device_id:'ESP32_A101',type:'temperature',severity:'medium',title:'Nhiệt độ cao',details:{temperature:34}};
   const first=await svc.upsertIncident(body),again=await svc.upsertIncident(body);assert.equal(first.type,'HIGH_TEMPERATURE');assert.equal(first.severity,'WARNING');assert.equal(again.id,first.id);assert.equal(again.count,2);assert.equal(again.duplicate,true);
   await svc.updateIncident(first.id,{status:'ACKNOWLEDGED',assigned_to:'operator@example.test'});await svc.updateIncident(first.id,{status:'RESOLVED'});

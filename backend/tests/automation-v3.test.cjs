@@ -67,3 +67,97 @@ test('HTTP DTO + simulator: AUTO â†’ resolve â†’ guarded dispatch â�
  assert.equal((await s.commands.get(a.commands[0].id)).status,'ACK');
  const bad=await fetch(url+'/api/automation/resolve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({device_id:device,source:'MANUAL',request_id:randomUUID(),command_type:'FAN',action:'ON',override_minutes:0})});assert.equal(bad.status,400);
 }finally{if(app)await app.close();await s.pg.close();}});
+
+test('WF02 adaptive decisions → stored levels → guarded dispatch → simulator ACK', async () => {
+ const s = await setup();
+ const workflow = require('../../n8n-workflows/02_AI_DECISION_ENGINE_V3.json');
+ function code(name, input, outputs = {}) {
+   const node = workflow.nodes.find(n => n.name === name);
+   const lookup = key => ({ first: () => ({ json: outputs[key] }) });
+   return new Function('$json', '$', node.parameters.jsCode)(input, lookup).json;
+ }
+ const run = randomUUID(), start = Date.now();
+ const policy = await s.devices.policy('A101');
+ const config = { max_age_seconds:120, max_observation_gap_seconds:20, co2_critical_ppm:2000,
+   humidity_critical_percent:90, ai_enabled:false };
+ let app;
+ try {
+   for (const [index, temperature] of [28.2, 28.5, 29].entries()) {
+     await s.telemetry.create({device_id:device, event_id:randomUUID(), run_id:run, sequence:index,
+       observed_at:new Date(start-(2-index)*10000).toISOString(), temperature,
+       humidity:80, light_percent:10, occupancy_count:4, co2_ppm:720, power_w:400, door_open:false});
+   }
+   const rows = await s.telemetry.list(device);
+   const states = await s.db.query('SELECT * FROM device_states WHERE device_id=$1',[device]);
+   const make = (samples, weather, overrides = {}) => {
+     const t = samples[0], envelope = body => ({statusCode:200,body});
+     const previous = overrides.previous || [];
+     const context = code('Build Decision Context', null, {
+       'Validate Decision Input': {input:{device_id:device,telemetry_id:t.id,event_id:t.event_id},config,room:'A101'},
+       'Get Dashboard Context':envelope({devices:[{id:device,code:'ESP32_A101',room_code:'A101',states}],decisions:previous}),
+       'Get Active Proposals':envelope([]),'Get Active Policy':envelope(policy),'Get Recent Telemetry':envelope(samples),
+       'Get Outdoor Weather':envelope(weather)
+     });
+     return code('Finalize Decision',code('AI Gate and Cache',context)).decision_payload;
+   };
+   const dry = {source:'demo-dry',dew_point:15,observed_at:new Date().toISOString()};
+   const wet = {...dry,source:'demo-humid',dew_point:28};
+   const decision = make(rows,dry);
+   assert.equal(decision.evidence.weather.strategy,'ventilate');
+   assert.deepEqual(decision.evidence.actuator_levels,{FAN:3,LIGHT:80});
+   assert.equal(decision.actions.VENTILATION,'ON');
+   assert.equal(decision.actions.DEHUMIDIFIER,'OFF');
+   const humid = make(rows,wet);
+   assert.equal(humid.actions.VENTILATION,'OFF');
+   assert.equal(humid.actions.DEHUMIDIFIER,'ON');
+   for (const unavailable of [null, {...dry,observed_at:'2020-01-01T00:00:00Z'}]) {
+     assert.equal(make(rows,unavailable).evidence.weather.source,'unavailable');
+     assert.equal(make(rows,unavailable).actions.DEHUMIDIFIER,'ON');
+   }
+   assert.equal(make(rows.map(t=>({...t,co2_ppm:2200})),wet).actions.VENTILATION,'ON');
+   assert.equal(make(rows.map(t=>({...t,humidity:95})),dry).actions.DEHUMIDIFIER,'ON');
+   assert.equal(make(rows.map(t=>({...t,occupancy_count:0})),dry).actions.FAN,'OFF');
+   const declining = rows.map((t,i)=>({...t,temperature:30.5+i}));
+   assert.equal(make(declining,dry).evidence.actuator_levels.FAN,1);
+
+   class M {}
+   app=await NestFactory.create({module:M,controllers:[ApiController,AutomationController],
+     providers:[{provide:DataSource,useValue:s.db},DeviceService,TelemetryService,CommandsService,
+       DashboardService,IncidentReportService,AutomationService]},{logger:false});
+   app.setGlobalPrefix('api');
+   await app.listen(0,'127.0.0.1');
+   const base=(await app.getUrl())+'/api/';
+   const saved=await s.telemetry.decision(decision);
+   const request={source:'AUTO',device_id:device,decision_id:saved.id};
+   const result=await s.automation.resolve(request);
+   for(const c of result.commands) await s.automation.dispatch(c.id);
+   const {Simulator}=await import('../../simulator/src/engine.js');
+   const sim=new Simulator();
+   sim.update({mode:'http',claim_url:base+'commands/claim',ack_url:base+'commands/ack'});
+   await sim.poll();
+   assert.equal(sim.counters.acks,4);
+   assert.deepEqual(sim.levels,{FAN:3,LIGHT:80});
+   assert.equal(sim.devices.VENTILATION,'ON');
+   assert.equal((await s.automation.resolve(request)).duplicate,true);
+   const confirmed=await s.db.query('SELECT actual_level FROM device_states WHERE device_id=$1 AND command_type=$2',[device,'LIGHT']);
+   assert.equal(confirmed[0].actual_level,80);
+ } finally { if(app) await app.close(); await s.pg.close(); }
+});
+
+test('Open-Meteo adapter coalesces reads, rejects stale weather and survives provider errors',async()=>{
+ const {OutdoorWeather}=require('../dist/modules/automation/outdoor-weather');
+ const old=process.env.WEATHER_MODE;process.env.WEATHER_MODE='live';
+ try{
+   let count=0; const now=Math.floor(Date.now()/1000);
+   const good=new OutdoorWeather(async url=>{
+     count++;assert.equal(url.searchParams.get('current'),'dew_point_2m');
+     return Response.json({current:{time:now,dew_point_2m:18.4}});
+   });
+   const values=await Promise.all([good.read(),good.read(),good.read()]);
+   assert.equal(values[0].dew_point,18.4);await good.read();assert.equal(count,1);
+   for(const fetcher of [async()=>Response.json({current:{time:now-7200,dew_point_2m:23}}),
+       async()=>Response.json({current:{time:now,dew_point_2m:null}}),async()=>{throw Error('offline')}]) {
+     assert.equal((await new OutdoorWeather(fetcher).read()).source,'unavailable');
+   }
+ }finally{if(old===undefined)delete process.env.WEATHER_MODE;else process.env.WEATHER_MODE=old;}
+});

@@ -5,6 +5,8 @@ import { randomUUID, createHash } from 'node:crypto';
 
 import { actuatorLevel } from '../../common/actuator-level';
 
+import { OutdoorWeather } from './outdoor-weather';
+
 const TYPES = ['FAN','LIGHT','VENTILATION','DEHUMIDIFIER'];
 const ACTIVE = ['PENDING','QUEUED','SENT'];
 export class ResolveAutomationDto {
@@ -79,10 +81,12 @@ export class AutomationService {
     return {...result,commands,commands_to_dispatch:commands};
    };
    if(!d.last_seen||now-new Date(d.last_seen).getTime()>90000)return finish('DEVICE_OFFLINE');
+   let levels: Record<string, number> = {};
    let actions:Record<string,string>={}; let deadline=now+p.config.command_ttl_seconds*1000;
    if(b.source==='AUTO'){
     const checked=await this.decision(q,d,b.decision_id!,p,now);
     if(checked.reason)return finish(checked.reason);
+    levels=checked.a.evidence.actuator_levels ?? {};
     actions=checked.a.actions;deadline=Math.min(deadline,Date.parse(checked.a.evidence.valid_until));
    }else actions={[b.command_type!]:b.action!};
    if(deadline-now<5000)return finish('TOO_LITTLE_TTL');
@@ -92,7 +96,7 @@ export class AutomationService {
    for(const [type,action] of Object.entries(actions)){
     if(!TYPES.includes(type))throw new BadRequestException('Loại thiết bị không hợp lệ.');
     if(d.capabilities && !d.capabilities.includes(type))throw new BadRequestException('Thiết bị không hỗ trợ '+type);
-    const level = b.source==='MANUAL' ? requestedLevel : null;
+    const level = b.source==='MANUAL' ? requestedLevel : actuatorLevel(type, action, levels[type]);
     const pending=await q.query(`SELECT * FROM device_commands WHERE device_id=$1 AND command_type=$2 AND status IN ('PENDING','QUEUED','SENT') ORDER BY sequence DESC FOR UPDATE`,[d.id,type]);
     if(b.source==='AUTO'){
      const [override]=await q.query(`SELECT * FROM manual_overrides WHERE device_id=$1 AND command_type=$2 AND expires_at>clock_timestamp()`,[d.id,type]);
@@ -131,6 +135,7 @@ export class AutomationService {
     const p=await this.policy(q,d);
     const checked=await this.decision(q,d,c.decision_id,p,now);reason=checked.reason;
     if(!reason&&checked.a.actions?.[c.command_type]!==c.action)reason='ACTION_MISMATCH';
+    if(!reason&&(checked.a.evidence.actuator_levels?.[c.command_type]??null)!==(c.level??null))reason='LEVEL_MISMATCH';
     const [override]=await q.query('SELECT id FROM manual_overrides WHERE device_id=$1 AND command_type=$2 AND expires_at>clock_timestamp()',[d.id,c.command_type]);
     if(override)reason='MANUAL_OVERRIDE';
    }else if(c.source==='MANUAL'){
@@ -148,7 +153,9 @@ export class AutomationService {
 
 @Controller('automation')
 export class AutomationController {
+ private readonly weather = new OutdoorWeather();
  constructor(private readonly service:AutomationService){}
+ @Get('outdoor-weather') outdoorWeather(){return this.weather.read();}
  @Post('resolve') resolve(@Body() b:ResolveAutomationDto){return this.service.resolve(b);}
  @Post('commands/:id/dispatch') dispatch(@Param('id',ParseUUIDPipe) id:string){return this.service.dispatch(id);}
  @Get('overrides/:device') overrides(@Param('device') device:string){return this.service.overrides(device);}

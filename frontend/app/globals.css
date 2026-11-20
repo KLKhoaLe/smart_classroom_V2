@@ -33,3 +33,71 @@
 
 /* Actuator controls: a draft level is distinct from ACK-confirmed state. */
 .level-control{display:grid;gap:8px;margin:16px 0;font-size:14px}.level-control input{width:100%;accent-color:#2563eb;min-height:28px}.command-feedback{font-size:13px;color:#475569}.command-error{color:#b91c1c;font-weight:600}
+
+/* Compact operating console: shared column edges, quiet surfaces, tabular values. */
+:root {
+  --bg: #f2f5f4;
+  --ink: #192d2d;
+  --muted: #536869;
+  --blue: #08675c;
+  --line: #cfdad7;
+}
+body { font-family: 'Segoe UI', Arial, sans-serif; font-variant-numeric: tabular-nums; }
+aside { background: #183535; color: #fff; width: 206px; padding: 28px 14px; }
+.brand { font-size: 17px; letter-spacing: -.4px; gap: 9px; }
+.brand > b { border-radius: 2px; background: #a2d7c5; color: #123c34; font-size: 14px; padding: 8px 7px; }
+aside nav { margin-top: 36px; gap: 4px; }
+aside nav a { border-radius: 0; border-left: 3px solid transparent; color: #d6e4e1; padding: 12px; font-size: 14px; }
+aside nav a:hover, aside nav a[aria-current="page"] { background: #244a46; color: #fff; }
+aside nav a[aria-current="page"] { border-color: #91dfbe; font-weight: 600; }
+.workspace { margin-left: 206px; }
+main { padding: clamp(18px, 3vw, 44px); }
+h1 { font-size: clamp(26px, 3vw, 36px); letter-spacing: -.04em; }
+h2 { font-size: 20px; font-weight: 620; }
+.heading, .page-heading, .decision-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.stats { gap: 0; border: 1px solid var(--line); background: #fff; }
+.stats > div { border-radius: 0; border-inline-end: 1px solid var(--line); }
+.stats > div:last-child { border-inline-end: none; }
+.stats small { color: var(--muted); font-size: 11px; }
+.stats strong { font-weight: 600; margin: 10px 0 0; }
+.panel { border: 1px solid var(--line); border-radius: 2px; min-width: 0; }
+.metrics { background: #f3f7f5; padding: 16px; gap: 14px; }
+.metrics small, .note, .empty, .decision small { color: var(--muted); }
+.device { background: #fff; border: 1px solid var(--line); border-top: 3px solid #9cb9b0; border-radius: 2px; }
+.device p, .device .button { font-size: 12px; }
+.state, .pill { font-size: 11px; }
+.button, .btn, .manual-toolbar select, .alert, .manual-message, .pill { border-radius: 2px; }
+.button, .btn { background: #fff; border: 1px solid #b8c9c4; color: #284743; padding: 9px 13px; }
+.button:hover, .btn:hover { background: #e6f0ec; }
+.pill { color: #275b51; background: #e6efeb; padding: 4px 8px; }
+.pill.muted { color: #475b5a; }
+.pill.freshness-stale, .pill.freshness-invalid { background: #fff1d1; color: #704800; }
+.level-control input { accent-color: var(--blue); }
+td, th { padding: 11px 10px; }
+th { color: #415957; background: #edf3f0; font-weight: 600; }
+td { border-color: var(--line); }
+table { font-size: 13px; }
+.decision-meta { flex-wrap: wrap; justify-content: start; }
+.decision-meta small { margin-right: auto; font-size: 11px; }
+.weather-decision { border-left: 3px solid #589d86; padding: 6px 12px; margin: 10px 0; background: #f2f7f4; }
+.weather-decision p { margin: 3px 0; }
+.decision summary { cursor: pointer; color: var(--blue); font-size: 12px; }
+:focus-visible { outline: 2px solid #2389b8; outline-offset: 3px; }
+@media (max-width: 650px) {
+  aside { width: 100%; padding: 16px; }
+  aside nav { margin-top: 12px; }
+  aside nav a { padding: 7px; font-size: 12px; }
+  .workspace { margin-left: 0; }
+  .heading, .page-heading { align-items: start; flex-wrap: wrap; }
+  .refresh-controls { display: flex; align-items: center; text-align: left; }
+  .stats > div { padding: 14px; border-bottom: 1px solid var(--line); }
+  .stats > div:nth-child(even) { border-inline-end: none; }
+  .stats > div:nth-last-child(-n+2) { border-bottom: none; }
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.adaptive-summary { display: grid; grid-template-columns: 1fr 1.5fr; gap: 16px; align-items: center; margin: 16px 0; }
+.adaptive-summary b { font-size: 13px; }
+.adaptive-summary .weather-decision { margin: 0; }
+.decision .adaptive-summary { grid-template-columns: 1fr; }
+@media (max-width: 650px) { .adaptive-summary { grid-template-columns: 1fr; } }
